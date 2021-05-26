@@ -31,10 +31,12 @@ public class DefaultMessageFilter implements MessageFilter {
 
     @Override
     public boolean isMatchedByConsumeQueue(Long tagsCode, ConsumeQueueExt.CqExtUnit cqExtUnit) {
+        // 消息tagsCode 空
         if (null == tagsCode || null == subscriptionData) {
             return true;
         }
 
+        // 订阅数据 空
         if (subscriptionData.isClassFilterMode()) {
             return true;
         }

@@ -34,6 +34,7 @@ public class PullRequestHoldService extends ServiceThread {
     private static final String TOPIC_QUEUEID_SEPARATOR = "@";
     private final BrokerController brokerController;
     private final SystemClock systemClock = new SystemClock();
+    // 拉取消息请求集合
     private ConcurrentMap<String/* topic@queueId */, ManyPullRequest> pullRequestTable =
         new ConcurrentHashMap<String, ManyPullRequest>(1024);
 
@@ -41,6 +42,12 @@ public class PullRequestHoldService extends ServiceThread {
         this.brokerController = brokerController;
     }
 
+    /**
+     * 添加拉取消息挂起请求
+     * @param topic
+     * @param queueId
+     * @param pullRequest 拉取消息请求
+     */
     public void suspendPullRequest(final String topic, final int queueId, final PullRequest pullRequest) {
         String key = this.buildKey(topic, queueId);
         ManyPullRequest mpr = this.pullRequestTable.get(key);
@@ -55,6 +62,12 @@ public class PullRequestHoldService extends ServiceThread {
         mpr.addPullRequest(pullRequest);
     }
 
+    /**
+     * 根据 主题 + 队列编号 创建唯一标识
+     * @param topic
+     * @param queueId
+     * @return
+     */
     private String buildKey(final String topic, final int queueId) {
         StringBuilder sb = new StringBuilder();
         sb.append(topic);
@@ -68,12 +81,14 @@ public class PullRequestHoldService extends ServiceThread {
         log.info("{} service started", this.getServiceName());
         while (!this.isStopped()) {
             try {
+                // 根据 长轮训 还是 短轮训 设置不同的等待时间
                 if (this.brokerController.getBrokerConfig().isLongPollingEnable()) {
                     this.waitForRunning(5 * 1000);
                 } else {
                     this.waitForRunning(this.brokerController.getBrokerConfig().getShortPollingTimeMills());
                 }
 
+                // 检查挂起请求是否有需要通知的
                 long beginLockTimestamp = this.systemClock.now();
                 this.checkHoldRequest();
                 long costTime = this.systemClock.now() - beginLockTimestamp;
@@ -93,6 +108,7 @@ public class PullRequestHoldService extends ServiceThread {
         return PullRequestHoldService.class.getSimpleName();
     }
 
+    // 遍历挂起请求，检查是否有需要通知的请求。
     private void checkHoldRequest() {
         for (String key : this.pullRequestTable.keySet()) {
             String[] kArray = key.split(TOPIC_QUEUEID_SEPARATOR);
@@ -109,10 +125,26 @@ public class PullRequestHoldService extends ServiceThread {
         }
     }
 
+    /**
+     * 检查是否有需要通知的请求
+     * @param topic
+     * @param queueId
+     * @param maxOffset 消费队列最大offset
+     */
     public void notifyMessageArriving(final String topic, final int queueId, final long maxOffset) {
         notifyMessageArriving(topic, queueId, maxOffset, null, 0, null, null);
     }
 
+    /**
+     *  检查是否有需要通知的请求
+     * @param topic
+     * @param queueId
+     * @param maxOffset 消费队列最大offset
+     * @param tagsCode  过滤tagsCode
+     * @param msgStoreTime
+     * @param filterBitMap
+     * @param properties
+     */
     public void notifyMessageArriving(final String topic, final int queueId, final long maxOffset, final Long tagsCode,
         long msgStoreTime, byte[] filterBitMap, Map<String, String> properties) {
         String key = this.buildKey(topic, queueId);

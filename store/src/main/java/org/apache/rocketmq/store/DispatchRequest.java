@@ -19,12 +19,19 @@ package org.apache.rocketmq.store;
 import java.util.Map;
 
 public class DispatchRequest {
+    // 主题
     private final String topic;
+    // 队列编号
     private final int queueId;
+    // commitLog存储位置
     private final long commitLogOffset;
+    // 消息长度
     private int msgSize;
+    // 消息tagsCode
     private final long tagsCode;
+    // 存储时间
     private final long storeTimestamp;
+    // 队列位置
     private final long consumeQueueOffset;
     private final String keys;
     private final boolean success;
