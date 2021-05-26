@@ -116,8 +116,8 @@ public class RemoteBrokerOffsetStore implements OffsetStore {
         if (null == mqs || mqs.isEmpty())
             return;
 
+        // 持久化消息队列
         final HashSet<MessageQueue> unusedMQ = new HashSet<MessageQueue>();
-
         for (Map.Entry<MessageQueue, AtomicLong> entry : this.offsetTable.entrySet()) {
             MessageQueue mq = entry.getKey();
             AtomicLong offset = entry.getValue();
@@ -139,6 +139,7 @@ public class RemoteBrokerOffsetStore implements OffsetStore {
             }
         }
 
+        // 移除不适用的消息队列
         if (!unusedMQ.isEmpty()) {
             for (MessageQueue mq : unusedMQ) {
                 this.offsetTable.remove(mq);

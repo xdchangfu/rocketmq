@@ -100,6 +100,10 @@ public class MQClientInstance {
     private final ConcurrentMap<String/* Topic */, TopicRouteData> topicRouteTable = new ConcurrentHashMap<String, TopicRouteData>();
     private final Lock lockNamesrv = new ReentrantLock();
     private final Lock lockHeartbeat = new ReentrantLock();
+
+    /**
+     * Broker名字 和 Broker地址相关 Map
+     */
     private final ConcurrentMap<String/* Broker Name */, HashMap<Long/* brokerId */, String/* address */>> brokerAddrTable =
         new ConcurrentHashMap<String, HashMap<Long, String>>();
     private final ConcurrentMap<String/* Broker Name */, HashMap<String/* address */, Integer>> brokerVersionTable =
@@ -254,6 +258,7 @@ public class MQClientInstance {
 
     private void startScheduledTask() {
         if (null == this.clientConfig.getNamesrvAddr()) {
+            // 定时同步消费进度
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
                 @Override
@@ -1028,15 +1033,26 @@ public class MQClientInstance {
         return null;
     }
 
+    /**
+     * 获得Broker信息
+     * @param brokerName
+     * @param brokerId
+     * @param onlyThisBroker    是否必须是该broker
+     * @return  Broker信息
+     */
     public FindBrokerResult findBrokerAddressInSubscribe(
         final String brokerName,
         final long brokerId,
         final boolean onlyThisBroker
     ) {
+        // broker地址
         String brokerAddr = null;
+        // 是否为从节点
         boolean slave = false;
+        // 是否找到
         boolean found = false;
 
+        // 获得Broker信息
         HashMap<Long/* brokerId */, String/* address */> map = this.brokerAddrTable.get(brokerName);
         if (map != null && !map.isEmpty()) {
             brokerAddr = map.get(brokerId);
@@ -1048,6 +1064,7 @@ public class MQClientInstance {
                 found = brokerAddr != null;
             }
 
+            // 如果不强制获得，选择一个Broker
             if (!found && !onlyThisBroker) {
                 Entry<Long, String> entry = map.entrySet().iterator().next();
                 brokerAddr = entry.getValue();
@@ -1056,10 +1073,12 @@ public class MQClientInstance {
             }
         }
 
+        // 找到broker，则返回信息
         if (found) {
             return new FindBrokerResult(brokerAddr, slave, findBrokerVersion(brokerName, brokerAddr));
         }
 
+        // 找不到，则返回空
         return null;
     }
 

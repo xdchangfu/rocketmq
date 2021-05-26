@@ -16,6 +16,11 @@
  */
 package org.apache.rocketmq.client.consumer.store;
 
+/**
+ * RemoteBrokerOffsetStore ：Consumer 集群模式 下，使用远程 Broker 消费进度。
+ * LocalFileOffsetStore ：Consumer 广播模式下，使用本地 文件 消费进度。
+ */
+
 import java.util.Map;
 import java.util.Set;
 import org.apache.rocketmq.client.exception.MQBrokerException;

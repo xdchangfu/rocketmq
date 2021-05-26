@@ -1642,11 +1642,15 @@ public class DefaultMessageStore implements MessageStore {
             // 非事务消息 或 事务提交消息 建立 消息位置信息 到 ConsumeQueue
             final int tranType = MessageSysFlag.getTransactionValue(request.getSysFlag());
             switch (tranType) {
+                // 非事务消息
                 case MessageSysFlag.TRANSACTION_NOT_TYPE:
+                // 事务消息COMMIT
                 case MessageSysFlag.TRANSACTION_COMMIT_TYPE:
                     DefaultMessageStore.this.putMessagePositionInfo(request);
                     break;
+                // 事务消息PREPARED
                 case MessageSysFlag.TRANSACTION_PREPARED_TYPE:
+                // 事务消息ROLLBACK
                 case MessageSysFlag.TRANSACTION_ROLLBACK_TYPE:
                     break;
             }

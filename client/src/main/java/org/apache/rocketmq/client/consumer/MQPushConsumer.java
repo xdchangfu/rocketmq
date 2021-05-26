@@ -21,7 +21,14 @@ import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerOrderly;
 import org.apache.rocketmq.client.exception.MQClientException;
 
+
 /**
+ * RebalanceService：均衡消息队列服务，负责分配当前 Consumer 可消费的消息队列( MessageQueue )。当有新的 Consumer 的加入或移除，都会重新分配消息队列。
+ * PullMessageService：拉取消息服务，不断不断不断从 Broker 拉取消息，并提交消费任务到 ConsumeMessageService。
+ * ConsumeMessageService：消费消息服务，不断不断不断消费消息，并处理消费结果。
+ * RemoteBrokerOffsetStore：Consumer 消费进度管理，负责从 Broker 获取消费进度，同步消费进度到 Broker。
+ * ProcessQueue ：消息队列处理。
+ * MQClientInstance ：封装对 Namesrv，Broker 的 API调用，提供给 Producer、Consumer 使用。
  * Push consumer
  */
 public interface MQPushConsumer extends MQConsumer {
