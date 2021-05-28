@@ -16,11 +16,6 @@
  */
 package org.apache.rocketmq.client.consumer.store;
 
-/**
- * RemoteBrokerOffsetStore ：Consumer 集群模式 下，使用远程 Broker 消费进度。
- * LocalFileOffsetStore ：Consumer 广播模式下，使用本地 文件 消费进度。
- */
-
 import java.util.Map;
 import java.util.Set;
 import org.apache.rocketmq.client.exception.MQBrokerException;
@@ -29,6 +24,13 @@ import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.exception.RemotingException;
 
 /**
+ * 消息消费进度保存
+ *
+ * RemoteBrokerOffsetStore ：Consumer 集群模式 下，使用远程 Broker 消费进度。
+ * LocalFileOffsetStore ：Consumer 广播模式下，使用本地 文件 消费进度。
+ * 广播模式：广播模式由于每个消费者都需要消费消息，故消息的进度（最后消费的偏移量可以保存在本地）
+ * 集群模式：由于集群中的消费者只要一个消费消息即可，故消息的消费进度，需要保存在集中点，比如分布式缓存、 RocketMQ存储在Broker所在的服务器
+ *
  * Offset store interface
  */
 public interface OffsetStore {

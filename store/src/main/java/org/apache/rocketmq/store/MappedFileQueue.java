@@ -34,16 +34,29 @@ public class MappedFileQueue {
     private static final InternalLogger LOG_ERROR = InternalLoggerFactory.getLogger(LoggerName.STORE_ERROR_LOGGER_NAME);
 
     private static final int DELETE_FILES_BATCH_MAX = 10;
-
+    /**
+     * 文件存储路径
+     */
     private final String storePath;
-
+    /**
+     * 单个MappedFile文件长度
+     */
     private final int mappedFileSize;
-
+    /**
+     * mappedFile集合
+     */
     private final CopyOnWriteArrayList<MappedFile> mappedFiles = new CopyOnWriteArrayList<MappedFile>();
-
+    /**
+     * 创建 MappedFileService
+     */
     private final AllocateMappedFileService allocateMappedFileService;
-
+    /**
+     * 刷盘位置
+     */
     private long flushedWhere = 0;
+    /**
+     * commit 位置
+     */
     private long committedWhere = 0;
 
     private volatile long storeTimestamp = 0;
@@ -101,6 +114,12 @@ public class MappedFileQueue {
         return mfs;
     }
 
+    /**
+     * 该方法主要就是再次遍历所有的MappedFile,如果无效的offset 大于该 consumeque,则无需处理
+     * 如果无效的 offset 小于该文件最大的偏移量，如果 consumequeue 的offset大于失效的offset,则该文件整个删除，如果否，
+     * 则设置wrotePosition,commitedPosition,flushedPoisition的值即可
+     * @param offset
+     */
     public void truncateDirtyFiles(long offset) {
         List<MappedFile> willRemoveFiles = new ArrayList<MappedFile>();
 
@@ -428,12 +447,15 @@ public class MappedFileQueue {
 
     public boolean flush(final int flushLeastPages) {
         boolean result = true;
+        // 根据上次刷新的位置，得到当前的MappedFile对象
         MappedFile mappedFile = this.findMappedFileByOffset(this.flushedWhere, this.flushedWhere == 0);
         if (mappedFile != null) {
             long tmpTimeStamp = mappedFile.getStoreTimestamp();
+            // 执行MappedFile的flush方法
             int offset = mappedFile.flush(flushLeastPages);
             long where = mappedFile.getFileFromOffset() + offset;
             result = where == this.flushedWhere;
+            // 更新上次刷新的位置
             this.flushedWhere = where;
             if (0 == flushLeastPages) {
                 this.storeTimestamp = tmpTimeStamp;
@@ -445,11 +467,16 @@ public class MappedFileQueue {
 
     public boolean commit(final int commitLeastPages) {
         boolean result = true;
+        // 根据 committedWhere 找到具体的MappedFile文件
         MappedFile mappedFile = this.findMappedFileByOffset(this.committedWhere, this.committedWhere == 0);
         if (mappedFile != null) {
+            // 调用MappedFile的commit函数
             int offset = mappedFile.commit(commitLeastPages);
+            // mappedFile返回的应该是当前commit的偏移量，加上该文件开始的偏移，，表示MappedFileQueue当前的提交偏移量
             long where = mappedFile.getFileFromOffset() + offset;
+            // 如果result = true,则可以认为MappedFile#commit 本次并没有执行commit操作
             result = where == this.committedWhere;
+            // 更新当前的ccomitedWhere指针
             this.committedWhere = where;
         }
 

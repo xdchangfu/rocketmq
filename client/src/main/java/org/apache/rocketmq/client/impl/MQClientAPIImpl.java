@@ -524,10 +524,13 @@ public class MQClientAPIImpl {
             @Override
             public void operationComplete(ResponseFuture responseFuture) {
                 long cost = System.currentTimeMillis() - beginStartTime;
+                // 先从Server端返回的responseFuture变量中获取RemotingCommand的值
                 RemotingCommand response = responseFuture.getResponseCommand();
                 if (null == sendCallback && response != null) {
 
                     try {
+                        // Client端处理发送消息的Reponse返回（包括对消息返回体的头部进行解码， 取得“topic”、“BrokerName”、“QueueId”等值）
+                        // 随后构建sendResult对象并设置Context上下文中
                         SendResult sendResult = MQClientAPIImpl.this.processSendResponse(brokerName, msg, response, addr);
                         if (context != null && sendResult != null) {
                             context.setSendResult(sendResult);

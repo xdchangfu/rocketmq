@@ -38,6 +38,9 @@ public class ConsumeQueue {
     private final int queueId;
     private final ByteBuffer byteBufferIndex;
 
+    /**
+     * 默认路径为：rockemt_home/store/consume/ {topic} / {queryId},默认大小为，30W条记录，也就是30W * 20字节
+     */
     private final String storePath;
     private final int mappedFileSize;
     private long maxPhysicOffset = -1;
@@ -86,23 +89,35 @@ public class ConsumeQueue {
     }
 
     public void recover() {
+        // 获取该消息队列的所有内存映射文件
         final List<MappedFile> mappedFiles = this.mappedFileQueue.getMappedFiles();
         if (!mappedFiles.isEmpty()) {
 
+            // 只从倒数第3个文件开始，这应该是一个经验值
             int index = mappedFiles.size() - 3;
             if (index < 0)
                 index = 0;
 
+            // consumequeue 逻辑大小
             int mappedFileSizeLogics = this.mappedFileSize;
+            // 该queue对应的内存映射文件
             MappedFile mappedFile = mappedFiles.get(index);
+            // 内存映射文件对应的ByteBuffer
             ByteBuffer byteBuffer = mappedFile.sliceByteBuffer();
+            // 处理的offset,默认从consumequeue中存放的第一个条目开始
             long processOffset = mappedFile.getFileFromOffset();
             long mappedFileOffset = 0;
             long maxExtAddr = 1;
             while (true) {
+                // 循环验证consumeque包含条目的有效性（如果offset大于0并且size大于0，则表示是一个有效的条目）
                 for (int i = 0; i < mappedFileSizeLogics; i += CQ_STORE_UNIT_SIZE) {
+                    // 如果offset大于0并且size大于0，则表示是一个有效的条目，设置consumequeue中有效的mappedFileOffset ，继续下一个条目的验证，
+                    // 如果发现不正常的条目，则跳出循环
+                    // commitlog中的物理偏移量
                     long offset = byteBuffer.getLong();
+                    // 该条消息的消息总长度
                     int size = byteBuffer.getInt();
+                    // tag hashcode
                     long tagsCode = byteBuffer.getLong();
 
                     if (offset >= 0 && size > 0) {
@@ -118,6 +133,7 @@ public class ConsumeQueue {
                     }
                 }
 
+                // 如果该consumeque文件中所有条目全部有效，则继续验证下一个文件，（index++）,如果发现条目不合法，后面的文件不需要再检测
                 if (mappedFileOffset == mappedFileSizeLogics) {
                     index++;
                     if (index >= mappedFiles.size()) {
@@ -139,9 +155,12 @@ public class ConsumeQueue {
                 }
             }
 
+            // processOffset 代表了当前consuemque有效的偏移量
             processOffset += mappedFileOffset;
+            // 设置setFlushedWhere，setCommittedWhere为当前有效的偏移量
             this.mappedFileQueue.setFlushedWhere(processOffset);
             this.mappedFileQueue.setCommittedWhere(processOffset);
+            // 截断无效的consumeque文件
             this.mappedFileQueue.truncateDirtyFiles(processOffset);
 
             if (isExtReadEnable()) {
@@ -379,6 +398,7 @@ public class ConsumeQueue {
     // 添加位置信息封装
     public void putMessagePositionInfoWrapper(DispatchRequest request) {
         final int maxRetries = 30;
+        // 判断ConsumeQueue是否可写
         boolean canWrite = this.defaultMessageStore.getRunningFlags().isCQWriteable();
         // 多次循环写，直到成功
         for (int i = 0; i < maxRetries && canWrite; i++) {
@@ -405,7 +425,7 @@ public class ConsumeQueue {
                     this.defaultMessageStore.getMessageStoreConfig().isEnableDLegerCommitLog()) {
                     this.defaultMessageStore.getStoreCheckpoint().setPhysicMsgTimestamp(request.getStoreTimestamp());
                 }
-                // 添加成功，使用消息存储时间 作为 存储check point。
+                // 添加成功，使用消息存储时间 作为 存储check point。 写入ConsumeQueue文件,真正的写入到ConsumeQueue逻辑
                 this.defaultMessageStore.getStoreCheckpoint().setLogicsMsgTimestamp(request.getStoreTimestamp());
                 return;
             } else {
@@ -428,10 +448,10 @@ public class ConsumeQueue {
 
     /**
      * 添加位置信息，并返回添加是否成功
-     * @param offset commitLog存储位置
-     * @param size 消息长度
-     * @param tagsCode 消息tagsCode
-     * @param cqOffset 队列位置
+     * @param offset commitlog 偏移量，8字节
+     * @param size 消息体大小 4字节
+     * @param tagsCode 消息tags的hashcode
+     * @param cqOffset 写入 consumequeue 的偏移量
      * @return 是否成功
      */
     private boolean putMessagePositionInfo(final long offset, final int size, final long tagsCode,
@@ -448,13 +468,14 @@ public class ConsumeQueue {
         this.byteBufferIndex.limit(CQ_STORE_UNIT_SIZE);
         this.byteBufferIndex.putLong(offset);
         this.byteBufferIndex.putInt(size);
+        // 首先将一条ConsueQueue条目总共20个字节，写入到ByteBuffer中
         this.byteBufferIndex.putLong(tagsCode);
 
-        // 计算consumeQueue存储位置，并获得对应的MappedFile
+        // 计算期望插入ConsumeQueue的consumequeue文件位置，并获得对应的MappedFile
         final long expectLogicOffset = cqOffset * CQ_STORE_UNIT_SIZE;
         MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile(expectLogicOffset);
         if (mappedFile != null) {
-            // 当是ConsumeQueue第一个MappedFile && 队列位置非第一个 && MappedFile未写入内容，则填充前置空白占位
+            // 当是 ConsumeQueue 第一个 MappedFile && 队列位置非第一个 && MappedFile 未写入内容，如果文件是新建的,则填充前置空白占位
             if (mappedFile.isFirstCreateInQueue() && cqOffset != 0 && mappedFile.getWrotePosition() == 0) {
                 this.minLogicOffset = expectLogicOffset;
                 this.mappedFileQueue.setFlushedWhere(expectLogicOffset);
@@ -487,7 +508,7 @@ public class ConsumeQueue {
             }
             // 设置commitLog重放消息到ConsumeQueue位置
             this.maxPhysicOffset = offset + size;
-            // 插入mappedFile
+            // 写入到ConsumeQueue文件中，，整个过程都是基于MappedFile来操作的
             return mappedFile.appendMessage(this.byteBufferIndex.array());
         }
         return false;

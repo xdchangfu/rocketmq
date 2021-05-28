@@ -40,8 +40,12 @@ import org.apache.rocketmq.common.protocol.heartbeat.ConsumeType;
 import org.apache.rocketmq.common.protocol.heartbeat.MessageModel;
 import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 
+/**
+ * 消费端消费者与消息队列的重新分布，与消息应该分配给哪个消费者消费息息相关
+ */
 public abstract class RebalanceImpl {
     protected static final InternalLogger log = ClientLogger.getLog();
+
     protected final ConcurrentMap<MessageQueue, ProcessQueue> processQueueTable = new ConcurrentHashMap<MessageQueue, ProcessQueue>(64);
     protected final ConcurrentMap<String/* topic */, Set<MessageQueue>> topicSubscribeInfoTable =
         new ConcurrentHashMap<String, Set<MessageQueue>>();
@@ -226,7 +230,7 @@ public abstract class RebalanceImpl {
      * @param isOrder 是否顺序消息
      */
     public void doRebalance(final boolean isOrder) {
-        // 分配每个 topic 的消息队列
+        // 根据topic来进行负载---分配每个 topic 的消息队列
         Map<String, SubscriptionData> subTable = this.getSubscriptionInner();
         if (subTable != null) {
             for (final Map.Entry<String, SubscriptionData> entry : subTable.entrySet()) {
@@ -250,6 +254,7 @@ public abstract class RebalanceImpl {
     }
 
     private void rebalanceByTopic(final String topic, final boolean isOrder) {
+        // 根据消息消费模式（集群还是广播）我们先重点看集群模式
         switch (messageModel) {
             case BROADCASTING: {
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
@@ -270,6 +275,7 @@ public abstract class RebalanceImpl {
             }
             case CLUSTERING: {
                 // 获取 topic 对应的 队列 和 consumer信息
+                // 获取主题的消息消费队列、主题与该消费组的消费者id列表,任意一个为空，则退出方法的执行
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
                 List<String> cidAll = this.mQClientFactory.findConsumerIdList(topic, consumerGroup);
                 if (null == mqSet) {
@@ -290,9 +296,9 @@ public abstract class RebalanceImpl {
                     Collections.sort(mqAll);
                     Collections.sort(cidAll);
 
-                    AllocateMessageQueueStrategy strategy = this.allocateMessageQueueStrategy;
-
+                    // 主要是对主题的消息队列排序、消费者ID进行排序，然后利用分配算法，计算当前消费者ID(mqClient.clientId) 分配出需要拉取的消息队列
                     // 根据 队列分配策略 分配消息队列
+                    AllocateMessageQueueStrategy strategy = this.allocateMessageQueueStrategy;
                     List<MessageQueue> allocateResult = null;
                     try {
                         allocateResult = strategy.allocate(
@@ -311,7 +317,7 @@ public abstract class RebalanceImpl {
                         allocateResultSet.addAll(allocateResult);
                     }
 
-                    // 更新消息队列
+                    // 更新主题的消息消费处理队列，并返回消息队列负载是否改变
                     boolean changed = this.updateProcessQueueTableInRebalance(topic, allocateResultSet, isOrder);
                     if (changed) {
                         log.info(

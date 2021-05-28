@@ -18,15 +18,50 @@ package org.apache.rocketmq.remoting.netty;
 
 public class NettyServerConfig implements Cloneable {
     private int listenPort = 8888;
+    /**
+     * 业务线程池的线程个数
+     * 发送消息
+     * 消费消息
+     * 默认的业务线程池，采用fixed类型，线程个数就是由serverWorkerThreads
+     */
     private int serverWorkerThreads = 8;
+    /**
+     * 业务线程池的线程个数
+     * 发送消息
+     * 消费消息
+     * 默认的业务线程池，采用fixed类型，线程个数就是由serverWorkerThreads
+     */
     private int serverCallbackExecutorThreads = 0;
+    /**
+     * Netty IO线程数量，Selector所在的线程个数，也就主从Reactor模型中的从Reactor线程数量
+     */
     private int serverSelectorThreads = 3;
+    /**
+     * 服务端 oneWay(单向执行)
+     * 通常用在客户端与Broker的交互
+     */
     private int serverOnewaySemaphoreValue = 256;
+    /**
+     * 异步调用的信号量（并发度）
+     * 通常用在客户端与Broker的交互
+     */
     private int serverAsyncSemaphoreValue = 64;
+    /**
+     * 通道空闲时间，默认120S, 通过Netty的IdleStateHandler实现
+     */
     private int serverChannelMaxIdleTimeSeconds = 120;
 
+    /**
+     * socket发送缓存区大小
+     */
     private int serverSocketSndBufSize = NettySystemConfig.socketSndbufSize;
+    /**
+     * socket接收缓存区大小
+     */
     private int serverSocketRcvBufSize = NettySystemConfig.socketRcvbufSize;
+    /**
+     * 是否使用PooledByteBuf(可重用，缓存ByteBuf)
+     */
     private boolean serverPooledByteBufAllocatorEnable = true;
 
     /**

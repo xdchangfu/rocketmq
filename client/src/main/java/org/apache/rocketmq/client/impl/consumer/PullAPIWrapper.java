@@ -49,6 +49,9 @@ import org.apache.rocketmq.common.protocol.route.TopicRouteData;
 import org.apache.rocketmq.common.sysflag.PullSysFlag;
 import org.apache.rocketmq.remoting.exception.RemotingException;
 
+/**
+ * pull与Push在RocketMQ中，其实就只有Pull模式，所以Push其实就是用pull封装一下
+ */
 public class PullAPIWrapper {
     private final InternalLogger log = ClientLogger.getLog();
     private final MQClientInstance mQClientFactory;
@@ -166,16 +169,16 @@ public class PullAPIWrapper {
 
     /**
      * 拉取消息核心方法
-     * @param mq 消息队列
-     * @param subExpression 订阅表达式
+     * @param mq 消息消费队列
+     * @param subExpression 消息订阅子模式subscribe( topicName, "模式")
      * @param expressionType    表达式类型
      * @param subVersion    订阅版本号
      * @param offset        拉取队列开始位置
      * @param maxNums       拉取消息数量
-     * @param sysFlag       拉取请求系统标识
-     * @param commitOffset      提交消费进度
-     * @param brokerSuspendMaxTimeMillis        broker挂起请求最大时间
-     * @param timeoutMillis     请求broker超时时长
+     * @param sysFlag       拉取请求系统标识    FLAG_COMMIT_OFFSET、FLAG_SUSPEND、FLAG_SUBSCRIPTION、FLAG_CLASS_FILTER
+     * @param commitOffset      当前消息队列 commitlog日志中当前的最新偏移量（内存中）
+     * @param brokerSuspendMaxTimeMillis        允许的broker 暂停的时间，毫秒为单位，默认为15s
+     * @param timeoutMillis     请求broker超时时间,默认为30s
      * @param communicationMode     通讯模式
      * @param pullCallback  拉取回调
      * @return  拉取消息结果。只有通讯模式为同步时，才返回结果，否则返回null。
@@ -199,7 +202,7 @@ public class PullAPIWrapper {
         final PullCallback pullCallback
     ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
 
-        // 获取Broker信息
+        // 根据MQ的Broker信息获取查找Broker信息，封装成FindBrokerResult
         FindBrokerResult findBrokerResult =
             this.mQClientFactory.findBrokerAddressInSubscribe(mq.getBrokerName(),
                 this.recalculatePullFromWhichNode(mq), false);
@@ -210,7 +213,7 @@ public class PullAPIWrapper {
                     this.recalculatePullFromWhichNode(mq), false);
         }
 
-        // 请求拉取消息
+        // 然后通过网络去 拉取具体的消息，也就是消息体 中的数据。具体数据拉取逻辑，在重点分析消息存储时重点去研究。
         if (findBrokerResult != null) {
             {
                 // check version
@@ -244,6 +247,8 @@ public class PullAPIWrapper {
                 brokerAddr = computePullFromWhichFilterServer(mq.getTopic(), brokerAddr);
             }
 
+            // 最终返回一个拉取结果
+            // 同时，拉取消息，会根据拉取模式，是同步还是异步模式，调用回调或直接处理
             PullResult pullResult = this.mQClientFactory.getMQClientAPIImpl().pullMessage(
                 brokerAddr,
                 requestHeader,

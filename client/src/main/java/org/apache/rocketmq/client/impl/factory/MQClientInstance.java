@@ -84,6 +84,9 @@ import org.apache.rocketmq.remoting.exception.RemotingException;
 import org.apache.rocketmq.remoting.netty.NettyClientConfig;
 import org.apache.rocketmq.remoting.protocol.RemotingCommand;
 
+/**
+ * 消息客户端实例，负载与MQ服务器（Broker,Nameserver)交互的网络实现
+ */
 public class MQClientInstance {
     private final static long LOCK_TIMEOUT_MILLIS = 3000;
     private final InternalLogger log = ClientLogger.getLog();
@@ -118,8 +121,17 @@ public class MQClientInstance {
     private final PullMessageService pullMessageService;
     private final RebalanceService rebalanceService;
     private final DefaultMQProducer defaultMQProducer;
+    /**
+     * 消费端统计
+     */
     private final ConsumerStatsManager consumerStatsManager;
+    /**
+     * 心跳包发送次数
+     */
     private final AtomicLong sendHeartbeatTimesTotal = new AtomicLong(0);
+    /**
+     * 状态
+     */
     private ServiceState serviceState = ServiceState.CREATE_JUST;
     private Random random = new Random();
 
@@ -258,7 +270,7 @@ public class MQClientInstance {
 
     private void startScheduledTask() {
         if (null == this.clientConfig.getNamesrvAddr()) {
-            // 定时同步消费进度
+            // 定时同步消费进度 每隔2分钟尝试获取一次NameServer地址
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
                 @Override
@@ -272,6 +284,7 @@ public class MQClientInstance {
             }, 1000 * 10, 1000 * 60 * 2, TimeUnit.MILLISECONDS);
         }
 
+        // 每隔30S尝试更新主题路由信息
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -284,6 +297,7 @@ public class MQClientInstance {
             }
         }, 10, this.clientConfig.getPollNameServerInterval(), TimeUnit.MILLISECONDS);
 
+        // 每隔30S 进行Broker心跳检测
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -297,6 +311,7 @@ public class MQClientInstance {
             }
         }, 1000, this.clientConfig.getHeartbeatBrokerInterval(), TimeUnit.MILLISECONDS);
 
+        // 默认每隔5秒持久化ConsumeOffset
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -309,6 +324,7 @@ public class MQClientInstance {
             }
         }, 1000 * 10, this.clientConfig.getPersistConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
 
+        // 默认每隔1S检查线程池适配
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -610,10 +626,12 @@ public class MQClientInstance {
     public boolean updateTopicRouteInfoFromNameServer(final String topic, boolean isDefault,
         DefaultMQProducer defaultMQProducer) {
         try {
+            // 为了避免重复从NameServer获取配置信息，在这里使用了ReentrantLock,并且设有超时时间。固定为3000s
             if (this.lockNamesrv.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
                 try {
                     TopicRouteData topicRouteData;
                     if (isDefault && defaultMQProducer != null) {
+                        // 获取默认topic的配置信息 通过与NameServer的长连接Channel发送GET_ROUTEINTO_BY_TOPIC(105)命令，获取配置信息
                         topicRouteData = this.mQClientAPIImpl.getDefaultTopicRouteInfoFromNameServer(defaultMQProducer.getCreateTopicKey(),
                             1000 * 3);
                         if (topicRouteData != null) {
@@ -624,9 +642,11 @@ public class MQClientInstance {
                             }
                         }
                     } else {
+                        // 获取指定topic的配置信息 通过与NameServer的长连接Channel发送GET_ROUTEINTO_BY_TOPIC(105)命令，获取配置信息
                         topicRouteData = this.mQClientAPIImpl.getTopicRouteInfoFromNameServer(topic, 1000 * 3);
                     }
                     if (topicRouteData != null) {
+                        // 拿到最新的topic发布信息后，需要与本地缓存中的topic发布信息进行比较，如果有变化，则需要同步更新发送者、消费者关于该topic的缓存
                         TopicRouteData old = this.topicRouteTable.get(topic);
                         boolean changed = topicRouteDataIsChange(old, topicRouteData);
                         if (!changed) {
@@ -635,6 +655,7 @@ public class MQClientInstance {
                             log.info("the topic[{}] route info changed, old[{}] ,new[{}]", topic, old, topicRouteData);
                         }
 
+                        // 更新发送者的缓存
                         if (changed) {
                             TopicRouteData cloneTopicRouteData = topicRouteData.cloneTopicRouteData();
 
@@ -656,6 +677,7 @@ public class MQClientInstance {
                                 }
                             }
 
+                            // 更新订阅者的缓存（消费队列信息）
                             // Update sub info
                             {
                                 Set<MessageQueue> subscribeInfo = topicRouteData2TopicSubscribeInfo(topic, topicRouteData);

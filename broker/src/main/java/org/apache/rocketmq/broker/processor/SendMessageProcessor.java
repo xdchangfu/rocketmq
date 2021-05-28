@@ -131,7 +131,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             ConsumeMessageContext context = buildConsumeMessageContext(namespace, requestHeader, request);
             this.executeConsumeMessageHookAfter(context);
         }
-        // 判断消费分组是否存在（独有）
+        // 获取消费组的订阅信息
         SubscriptionGroupConfig subscriptionGroupConfig =
             this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(requestHeader.getGroup());
         if (null == subscriptionGroupConfig) {
@@ -199,7 +199,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         // 设置消息不等待存储完成（独有） TODO 疑问：如果设置成不等待存储，broker设置成同步落盘，岂不是不能批量提交了？
         msgExt.setWaitStoreMsgOK(false);
 
-        // 处理 delayLevel（独有）。
+        // 延迟级别、消费次数处理 如果消息次数或延迟级别小于0，设置消息的主题为 DLQ+ 消费组名称，如果消息的延迟级别为0,则 3 + 消息重试的次数
         int delayLevel = requestHeader.getDelayLevel();
         int maxReconsumeTimes = subscriptionGroupConfig.getRetryMaxTimes();
         if (request.getVersion() >= MQVersion.Version.V3_4_9.ordinal()) {

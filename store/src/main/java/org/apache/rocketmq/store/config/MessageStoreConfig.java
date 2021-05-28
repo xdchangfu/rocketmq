@@ -21,22 +21,24 @@ import org.apache.rocketmq.common.annotation.ImportantField;
 import org.apache.rocketmq.store.ConsumeQueue;
 
 public class MessageStoreConfig {
-    //The root directory in which the log data is kept
+    //The root directory in which the log data is kept 设置Broker的存储根目录，默认为 $Broker_Home/store
     @ImportantField
     private String storePathRootDir = System.getProperty("user.home") + File.separator + "store";
 
-    //The directory in which the commitlog is kept
+    //The directory in which the commitlog is kept 设置commitlog的存储目录，默认为$Broker_Home/store/commitlog
     @ImportantField
     private String storePathCommitLog = System.getProperty("user.home") + File.separator + "store"
         + File.separator + "commitlog";
 
-    // CommitLog file size,default is 1G
+    // CommitLog file size,default is 1G commitlog文件的大小，默认为1G
     private int mappedFileSizeCommitLog = 1024 * 1024 * 1024;
-    // ConsumeQueue file size,default is 30W
+    // ConsumeQueue file size,default is 30W ConsumeQueue存放的是定长的信息（20个字节，偏移量、size、tagscode）,默认30w * ConsumeQueue.CQ_STORE_UNIT_SIZE
     private int mappedFileSizeConsumeQueue = 300000 * ConsumeQueue.CQ_STORE_UNIT_SIZE;
     // enable consume queue ext
+    // 是否开启consumeQueueExt,默认为false,就是如果消费端消息消费速度跟不上，是否创建一个扩展的ConsumeQueue文件，
+    // 如果不开启，应该会阻塞从commitlog文件中获取消息，并且ConsumeQueue,应该是按topic独立的
     private boolean enableConsumeQueueExt = false;
-    // ConsumeQueue extend file size, 48M
+    // ConsumeQueue extend file size, 48M 扩展consume文件的大小，默认为48M
     private int mappedFileSizeConsumeQueueExt = 48 * 1024 * 1024;
     // Bit count of filter bit map.
     // this will be set by pipe of calculate filter bit map.
@@ -44,15 +46,19 @@ public class MessageStoreConfig {
 
     // CommitLog flush interval
     // flush data to disk
+    // 刷写CommitLog的间隔时间，RocketMQ后台会启动一个线程，将消息刷写到磁
+    // 盘，这个也就是该线程每次运行后等待的时间，默认为500毫秒。flush操作，调用文件通道的force()方法
     @ImportantField
     private int flushIntervalCommitLog = 500;
 
     // Only used if TransientStorePool enabled
     // flush data to FileChannel
+    // 提交消息到CommitLog对应的文件通道的间隔时间，原理与上面类似；将消息写入到文件通道（调用FileChannel.write方法）得到最新的写指针，默认为200毫秒
     @ImportantField
     private int commitIntervalCommitLog = 200;
 
     /**
+     * 在put message( 将消息按格式封装成msg放入相关队列时实用的锁机制：自旋或ReentrantLock)
      * introduced since 4.0.x. Determine whether to use mutex reentrantLock when putting message.<br/>
      * By default it is set to false indicating using spin lock when putting message.
      */
@@ -61,9 +67,9 @@ public class MessageStoreConfig {
     // Whether schedule flush,default is real-time
     @ImportantField
     private boolean flushCommitLogTimed = false;
-    // ConsumeQueue flush interval
+    // ConsumeQueue flush interval 刷写到ConsumeQueue的间隔，默认为1s
     private int flushIntervalConsumeQueue = 1000;
-    // Resource reclaim interval
+    // Resource reclaim interval    每次flush commitlog时最小发生变化的页数，如果不足该值，本次不进行刷写操作
     private int cleanResourceInterval = 10000;
     // CommitLog removal interval
     private int deleteCommitLogFilesInterval = 100;
@@ -78,7 +84,7 @@ public class MessageStoreConfig {
     // The number of hours to keep a log file before deleting it (in hours)
     @ImportantField
     private int fileReservedTime = 72;
-    // Flow control for ConsumeQueue
+    // Flow control for ConsumeQueue    流量控制参数
     private int putMsgIndexHightWater = 600000;
     // The maximum size of message,default is 4M
     private int maxMessageSize = 1024 * 1024 * 4;
@@ -88,11 +94,11 @@ public class MessageStoreConfig {
     private boolean checkCRCOnRecover = true;
     // How many pages are to be flushed when flush CommitLog
     private int flushCommitLogLeastPages = 4;
-    // How many pages are to be committed when commit data to file
+    // How many pages are to be committed when commit data to file  每次flush commitlog时最小发生变化的页数，如果不足该值，本次不进行刷写操作
     private int commitCommitLogLeastPages = 4;
-    // Flush page size when the disk in warming state
+    // Flush page size when the disk in warming state 每次flush commitlog时最小发生变化的页数，如果不足该值，本次不进行刷写操作
     private int flushLeastPagesWhenWarmMapedFile = 1024 / 4 * 16;
-    // How many pages are to be flushed when flush ConsumeQueue
+    // How many pages are to be flushed when flush ConsumeQueue 每次flush commitlog时最小发生变化的页数，如果不足该值，本次不进行刷写操作
     private int flushConsumeQueueLeastPages = 2;
     private int flushCommitLogThoroughInterval = 1000 * 10;
     private int commitCommitLogThoroughInterval = 200;

@@ -434,7 +434,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
                 return;
             }
 
-            // 监听器
+            // 首先，获取业务系统定义的消息消费监听器，负责具体消息的消费
             MessageListenerConcurrently listener = ConsumeMessageConcurrentlyService.this.messageListener;
             // 消费Context
             ConsumeConcurrentlyContext context = new ConsumeConcurrentlyContext(messageQueue);

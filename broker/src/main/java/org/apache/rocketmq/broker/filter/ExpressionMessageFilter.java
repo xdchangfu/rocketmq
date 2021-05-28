@@ -59,15 +59,17 @@ public class ExpressionMessageFilter implements MessageFilter {
 
     @Override
     public boolean isMatchedByConsumeQueue(Long tagsCode, ConsumeQueueExt.CqExtUnit cqExtUnit) {
+        // 此模式不是 Expression模式，直接返回true,表示匹配信息，这里的Expression模式，也就是非ClassFilterMode,包含TAG,SQL92 表达式
         if (null == subscriptionData) {
             return true;
         }
 
+        // isMatchedByConsumeQueue 不处理class filter mode
         if (subscriptionData.isClassFilterMode()) {
             return true;
         }
 
-        // by tags code.
+        // by tags code. 如果是TAG模式，只需要比对tag的hashcode,因为consumequeue只包含了tag hashcode
         if (ExpressionType.isTagType(subscriptionData.getExpressionType())) {
 
             if (tagsCode == null) {
@@ -116,14 +118,18 @@ public class ExpressionMessageFilter implements MessageFilter {
 
     @Override
     public boolean isMatchedByCommitLog(ByteBuffer msgBuffer, Map<String, String> properties) {
+
+        // 表示过滤模式为classfilter
         if (subscriptionData == null) {
             return true;
         }
 
+        // 表示过滤模式为classFilter,直接返回true
         if (subscriptionData.isClassFilterMode()) {
             return true;
         }
 
+        // 如果模式为TAG,直接返回true
         if (ExpressionType.isTagType(subscriptionData.getExpressionType())) {
             return true;
         }

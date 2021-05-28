@@ -79,9 +79,11 @@ public class NamesrvController {
 
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
 
+        // 创建一个线程容量为serverWorkerThreads的固定长度的线程池，该线程池供DefaultRequestProcessor类实现，该类实现具体的默认的请求命令处理
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
 
+        // 将DefaultRequestProcessor与代码@1创建的线程池绑定在一起
         this.registerProcessor();
 
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {

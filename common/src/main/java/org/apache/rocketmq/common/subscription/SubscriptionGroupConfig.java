@@ -21,6 +21,9 @@ import org.apache.rocketmq.common.MixAll;
 
 public class SubscriptionGroupConfig {
 
+    /**
+     * 消费组名称，RocketMQ消息消费重试不是以主题，而是以消费组
+     */
     private String groupName;
 
     private boolean consumeEnable = true;
@@ -28,8 +31,14 @@ public class SubscriptionGroupConfig {
 
     private boolean consumeBroadcastEnable = true;
 
+    /**
+     * 重试队列的数量，读队列，写队列个数（主题）
+     */
     private int retryQueueNums = 1;
 
+    /**
+     * 允许最大的重复次数
+     */
     private int retryMaxTimes = 16;
 
     private long brokerId = MixAll.MASTER_ID;

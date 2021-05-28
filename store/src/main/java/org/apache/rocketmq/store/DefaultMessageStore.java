@@ -63,50 +63,106 @@ import org.apache.rocketmq.store.index.QueryOffsetResult;
 import org.apache.rocketmq.store.schedule.ScheduleMessageService;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
 
+/**
+ * 根据comitlog offset来将commitlog转发给ConsumeQueue、Index
+ */
 public class DefaultMessageStore implements MessageStore {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
+    /**
+     * 存储相关的配置，例如存储路径、commitLog文件大小，刷盘频次等等
+     */
     private final MessageStoreConfig messageStoreConfig;
-    // CommitLog
+    /**
+     * 核心处理类，消息存储在commitlog文件中
+     */
     private final CommitLog commitLog;
 
+    /**
+     * topic的消费队列
+     */
     private final ConcurrentMap<String/* topic */, ConcurrentMap<Integer/* queueId */, ConsumeQueue>> consumeQueueTable;
 
+    /**
+     * ConsumeQueue刷盘服务线程
+     */
     private final FlushConsumeQueueService flushConsumeQueueService;
 
+    /**
+     * commitLog 定时清除服务
+     */
     private final CleanCommitLogService cleanCommitLogService;
 
+    /**
+     * consumeQueue 定时清除服务
+     */
     private final CleanConsumeQueueService cleanConsumeQueueService;
 
+    /**
+     *  索引服务
+     */
     private final IndexService indexService;
 
+    /**
+     * MappedFile分配线程，RocketMQ使用内存映射处理commitlog,consumeQueue文件
+     */
     private final AllocateMappedFileService allocateMappedFileService;
 
+    /**
+     * 重试存储消息服务现场
+     */
     private final ReputMessageService reputMessageService;
 
+    /**
+     * 主从同步实现服务
+     */
     private final HAService haService;
 
+    /**
+     * 定时任务调度器，执行定时任务，主要是处理定时任务
+     */
     private final ScheduleMessageService scheduleMessageService;
 
+    /**
+     * 存储统计服务
+     */
     private final StoreStatsService storeStatsService;
 
+    /**
+     *  DataBuffer池
+     */
     private final TransientStorePool transientStorePool;
 
+    /**
+     * 存储服务状态
+     */
     private final RunningFlags runningFlags = new RunningFlags();
     private final SystemClock systemClock = new SystemClock();
 
     private final ScheduledExecutorService scheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl("StoreScheduledThread"));
+    /**
+     * Broker统计服务
+     */
     private final BrokerStatsManager brokerStatsManager;
+    /**
+     * 消息达到监听器
+     */
     private final MessageArrivingListener messageArrivingListener;
     private final BrokerConfig brokerConfig;
 
     private volatile boolean shutdown = true;
 
+    /**
+     * 检查点
+     */
     private StoreCheckpoint storeCheckpoint;
 
     private AtomicLong printTimes = new AtomicLong(0);
 
+    /**
+     *  转发comitlog日志，主要是从commitlog转发到consumeQueue、commitlog index
+     */
     private final LinkedList<CommitLogDispatcher> dispatcherList;
 
     private RandomAccessFile lockFile;
@@ -182,25 +238,31 @@ public class DefaultMessageStore implements MessageStore {
         boolean result = true;
 
         try {
+            // 判断 ${ROCKET_HOME}/storepath/abort 文件是否存在，如果文件存在，则返回true,否则返回false，
+            // 这个文件的作用是什么呢？原来，在DefaultMessageStore启动时创建，在shutdown时删除，也就是如果该文件存在，说明不是正常的关闭
             boolean lastExitOK = !this.isTempFileExist();
             log.info("last shutdown {}", lastExitOK ? "normally" : "abnormally");
 
             if (null != scheduleMessageService) {
+                // 延迟消息启动
                 result = result && this.scheduleMessageService.load();
             }
 
-            // load Commit Log
+            // load Commit Log commitlog文件加载
             result = result && this.commitLog.load();
 
-            // load Consume Queue
+            // load Consume Queue 加载consumerqueue文件
             result = result && this.loadConsumeQueue();
 
             if (result) {
+                // 文件存储检测点
                 this.storeCheckpoint =
                     new StoreCheckpoint(StorePathConfigHelper.getStoreCheckpoint(this.messageStoreConfig.getStorePathRootDir()));
 
+                // 索引文件加载
                 this.indexService.load(lastExitOK);
 
+                // 文件检测恢复
                 this.recover(lastExitOK);
 
                 log.info("load over, and the max phy offset = {}", this.getMaxPhyOffset());
@@ -408,6 +470,7 @@ public class DefaultMessageStore implements MessageStore {
             this.printTimes.set(0);
         }
 
+        // 检测操作系统页写入是否忙
         if (this.isOSPageCacheBusy()) {
             return PutMessageStatus.OS_PAGECACHE_BUSY;
         }
@@ -487,14 +550,17 @@ public class DefaultMessageStore implements MessageStore {
         }
 
         long beginTime = this.getSystemClock().now();
+        // 日志写入CommitLog文件，具体实现类CommitLog
         PutMessageResult result = this.commitLog.putMessage(msg);
         long elapsedTime = this.getSystemClock().now() - beginTime;
         if (elapsedTime > 500) {
             log.warn("not in lock elapsed time(ms)={}, bodyLength={}", elapsedTime, msg.getBody().length);
         }
 
+        // 记录相关统计信息
         this.storeStatsService.setPutMessageEntireTimeMax(elapsedTime);
 
+        // 记录写commitlog失败次数
         if (null == result || !result.isOk()) {
             this.storeStatsService.getPutMessageFailedTimes().incrementAndGet();
         }
@@ -554,12 +620,13 @@ public class DefaultMessageStore implements MessageStore {
 
     /**
      * 获取消息结果
-     * @param group Consumer group that launches this query.
+     * @param group Consumer group that launches this query.    消费组名称
      * @param topic Topic to query.
-     * @param queueId Queue ID to query.
-     * @param offset Logical offset to start from.
+     * @param queueId Queue ID to query.    消息队列ID
+     * @param offset Logical offset to start from.  拉取的消息队列偏移量
      * @param maxMsgNums Maximum count of messages to query.
-     * @param messageFilter Message filter used to screen desired messages.
+     *                    一次拉取消息条数，默认为32，可通过消费者设置 pullBatchSize ，这个参数和consumeMessageBatchMaxSize=1是有区别的
+     * @param messageFilter Message filter used to screen desired messages. 消息过滤器
      * @return
      */
     public GetMessageResult getMessage(final String group, final String topic, final int queueId, final long offset,
@@ -581,33 +648,40 @@ public class DefaultMessageStore implements MessageStore {
         long beginTime = this.getSystemClock().now();
 
         GetMessageStatus status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
+        // 设置拉取偏移量，从PullRequest中获取，初始从消费进度中获取
         long nextBeginOffset = offset;
         long minOffset = 0;
         long maxOffset = 0;
 
         GetMessageResult getResult = new GetMessageResult();
 
+        // 获取commitlog文件中的最大偏移量
         final long maxOffsetPy = this.commitLog.getMaxOffset();
 
-        // 获取消费队列
+        // 根据topic,queueId获取消息队列（ConsumeQueue）
         ConsumeQueue consumeQueue = findConsumeQueue(topic, queueId);
         if (consumeQueue != null) {
             // 消费队列 最小队列编号
             minOffset = consumeQueue.getMinOffsetInQueue();
-            // 消费队列 最大队列编号
+            // 获取该消息队列中最小偏移量(minOffset)，最大偏移量(maxOffset)
             maxOffset = consumeQueue.getMaxOffsetInQueue();
 
-            // 判断 队列位置(offset) 消费队列无消息
-            if (maxOffset == 0) {
+            // 根据需要拉取消息的偏移量 与 队列最小，最大偏移量进行对比
+            if (maxOffset == 0) {   // 表示队列中没有消息
                 status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
+                // 计算下一次拉取拉取的开始偏移量
+                // 如果是主节点，或者是从节点但开启了offsetCheckSlave的话，下次从头开始拉取
+                // 如果是从节点，并不开启offsetCheckSlave,则使用原先的offset,因为考虑到主从同步延迟的因素，导致从节点consumequeue并没有同步到数据。
+                // offsetCheckInSlave设置为 false保险点，当然默认该值为false
+                //  status : NO_MESSAGE_IN_QUEUE
                 nextBeginOffset = nextOffsetCorrection(offset, 0);
-            } else if (offset < minOffset) { // 查询offset 太小
+            } else if (offset < minOffset) { // 要拉取的偏移量 小于 队列最小的偏移量
                 status = GetMessageStatus.OFFSET_TOO_SMALL;
                 nextBeginOffset = nextOffsetCorrection(offset, minOffset);
-            } else if (offset == maxOffset) {   // 查询offset 超过 消费队列 一个位置
+            } else if (offset == maxOffset) {   // 表示超出一个，返回状态：OFFSET_OVERFLOW_ONE，offset 保持不变
                 status = GetMessageStatus.OFFSET_OVERFLOW_ONE;
                 nextBeginOffset = nextOffsetCorrection(offset, offset);
-            } else if (offset > maxOffset) {    // 查询offset 超过 消费队列 太多(大于一个位置)
+            } else if (offset > maxOffset) {    // 表示超出 返回状态：OFFSET_OVERFLOW_BADLY
                 status = GetMessageStatus.OFFSET_OVERFLOW_BADLY;
                 if (0 == minOffset) {   // TODO blog 这里是？？为啥0 == minOffset做了特殊判断
                     nextBeginOffset = nextOffsetCorrection(offset, minOffset);
@@ -615,31 +689,32 @@ public class DefaultMessageStore implements MessageStore {
                     nextBeginOffset = nextOffsetCorrection(offset, maxOffset);
                 }
             } else {
-                // 获得 映射Buffer结果(MappedFile)
+                // 从consuequeue中从当前offset到当前consueque中最大可读消息内存
                 SelectMappedBufferResult bufferConsumeQueue = consumeQueue.getIndexBuffer(offset);
                 if (bufferConsumeQueue != null) {
                     try {
                         status = GetMessageStatus.NO_MATCHED_MESSAGE;
 
-                        // commitLog下一个文件(MappedFile)对应的开始offset。
+                        // commitLog 下一个文件(MappedFile)对应的开始offset
                         long nextPhyFileStartOffset = Long.MIN_VALUE;
                         // 消息物理位置拉取到的最大offset
                         long maxPhyOffsetPulling = 0;
 
                         int i = 0;
+                        // 最大过滤消息字节数
                         final int maxFilterMessageCount = Math.max(16000, maxMsgNums * ConsumeQueue.CQ_STORE_UNIT_SIZE);
                         final boolean diskFallRecorded = this.messageStoreConfig.isDiskFallRecorded();
                         ConsumeQueueExt.CqExtUnit cqExtUnit = new ConsumeQueueExt.CqExtUnit();
-                        // 循环获取 消息位置信息
+                        // 循环获取消息位置信息
                         for (; i < bufferConsumeQueue.getSize() && i < maxFilterMessageCount; i += ConsumeQueue.CQ_STORE_UNIT_SIZE) {
-                            // 消息物理位置offset
+                            // 消息物理位置offset -- commitlog 偏移量
                             long offsetPy = bufferConsumeQueue.getByteBuffer().getLong();
                             // 消息长度
                             int sizePy = bufferConsumeQueue.getByteBuffer().getInt();
-                            // 消息tagsCode
+                            // 消息tag hashcode
                             long tagsCode = bufferConsumeQueue.getByteBuffer().getLong();
 
-                            // 设置消息物理位置拉取到的最大offset
+                            // 当前拉取的物理偏移量，= offsetPy
                             maxPhyOffsetPulling = offsetPy;
 
                             // 当 offsetPy 小于 nextPhyFileStartOffset 时，意味着对应的 Message 已经移除，所以直接continue，直到可读取的Message。
@@ -648,9 +723,9 @@ public class DefaultMessageStore implements MessageStore {
                                     continue;
                             }
 
-                            // 校验 commitLog 是否需要硬盘，无法全部放在内存
+                            // 检查该 offsetPy，拉取的偏移量是否在磁盘上
                             boolean isInDisk = checkInDiskByCommitOffset(offsetPy, maxOffsetPy);
-                            // 是否已经获得足够消息
+                            // 主要就是本次是否已拉取到足够的消息
                             if (this.isTheBatchFull(sizePy, maxMsgNums, getResult.getBufferTotalSize(), getResult.getMessageCount(),
                                 isInDisk)) {
                                 break;
@@ -669,7 +744,8 @@ public class DefaultMessageStore implements MessageStore {
                                 }
                             }
 
-                            // 判断消息是否符合条件
+                            // 执行消息过滤，如果符合过滤条件。则直接进行下一条的拉取，如果不符合过滤条件，则进入继续执行，
+                            // 并如果最终符合条件，则将该消息添加到拉取结果中
                             if (messageFilter != null
                                 && !messageFilter.isMatchedByConsumeQueue(isTagsCodeLegal ? tagsCode : null, extRet ? cqExtUnit : null)) {
                                 if (getResult.getBufferTotalSize() == 0) {
@@ -679,6 +755,7 @@ public class DefaultMessageStore implements MessageStore {
                                 continue;
                             }
 
+                            // 从commitlog文件中读取消息，根据偏移量与消息大小
                             SelectMappedBufferResult selectResult = this.commitLog.getMessage(offsetPy, sizePy);
                             if (null == selectResult) {
                                 // 从commitLog无法读取到消息，说明该消息对应的文件（MappedFile）已经删除，计算下一个MappedFile的起始位置
@@ -686,10 +763,13 @@ public class DefaultMessageStore implements MessageStore {
                                     status = GetMessageStatus.MESSAGE_WAS_REMOVING;
                                 }
 
+                                // 如果该偏移量没有找到正确的消息，则说明已经到文件末尾了，下一次切换到下一个commitlog文件读取
                                 nextPhyFileStartOffset = this.commitLog.rollNextFile(offsetPy);
                                 continue;
                             }
 
+                            // 从commitlog（全量消息）再次过滤，原来是这样的，consumeque 中只能处理TAG模式的过滤，
+                            // SQL92这种模式无法过滤，因为SQL92需要依赖消息中的属性，故在这里再做一次过滤。如果消息符合条件，则加入到拉取结果中
                             if (messageFilter != null
                                 && !messageFilter.isMatchedByCommitLog(selectResult.getByteBuffer().slice(), null)) {
                                 if (getResult.getBufferTotalSize() == 0) {
@@ -701,12 +781,13 @@ public class DefaultMessageStore implements MessageStore {
                             }
 
                             this.storeStatsService.getGetMessageTransferedMsgCount().incrementAndGet();
+                            // 将消息加入到拉取结果中
                             getResult.addMessage(selectResult);
                             status = GetMessageStatus.FOUND;
                             nextPhyFileStartOffset = Long.MIN_VALUE;
                         }
 
-                        // 统计剩余可拉取消息字节数
+                        // 是否记录磁盘活动图，默认为false
                         if (diskFallRecorded) {
                             long fallBehind = maxOffsetPy - maxPhyOffsetPulling;
                             brokerStatsManager.recordDiskFallBehindSize(group, topic, queueId, fallBehind);
@@ -715,7 +796,7 @@ public class DefaultMessageStore implements MessageStore {
                         // 计算下次拉取消息的消息队列编号
                         nextBeginOffset = offset + (i / ConsumeQueue.CQ_STORE_UNIT_SIZE);
 
-                        // 根据剩余可拉取消息字节数与内存判断是否建议读取从节点
+                        // 主要是判断，如果当前commitlog中的偏移量 - 当前最大拉取消息偏移量 》允许消息在内存中存在大小时，建议下一次拉取任务，从从节点拉取。
                         long diff = maxOffsetPy - maxPhyOffsetPulling;
                         long memory = (long) (StoreUtil.TOTAL_PHYSICAL_MEMORY_SIZE
                             * (this.messageStoreConfig.getAccessMessageInMemoryMaxRatio() / 100.0));
@@ -745,7 +826,7 @@ public class DefaultMessageStore implements MessageStore {
         long elapsedTime = this.getSystemClock().now() - beginTime;
         this.storeStatsService.setGetMessageEntireTimeMax(elapsedTime);
 
-        // 设置返回结果
+        // 设置下一次拉取偏移量，然后返回拉取结果
         getResult.setStatus(status);
         getResult.setNextBeginOffset(nextBeginOffset);
         getResult.setMaxOffset(maxOffset);
@@ -1298,22 +1379,26 @@ public class DefaultMessageStore implements MessageStore {
 
     /**
      * 校验 commitLog 是否需要硬盘，无法全部放在内存
-     * @param offsetPy  commitLog 指定offset
-     * @param maxOffsetPy   commitLog 最大offset
+     * @param offsetPy  待拉取的消息偏移量
+     * @param maxOffsetPy   当前 commitlog 文件最大的偏移量
      * @return  是否需要硬盘
      */
     private boolean checkInDiskByCommitOffset(long offsetPy, long maxOffsetPy) {
-        long memory = (long) (StoreUtil.TOTAL_PHYSICAL_MEMORY_SIZE * (this.messageStoreConfig.getAccessMessageInMemoryMaxRatio() / 100.0));
+        // memory = 物理内存 * 这个比例，如果maxOffsetPy-offsetPy > memory的话，说明offsetPy这个偏移量的消息已经从内存中置换到磁盘中了
+        long memory = (long)
+                (StoreUtil.TOTAL_PHYSICAL_MEMORY_SIZE *
+                // 消息存储在物理内存中占用的最大比例
+                 (this.messageStoreConfig.getAccessMessageInMemoryMaxRatio() / 100.0));
         return (maxOffsetPy - offsetPy) > memory;
     }
 
     /**
      * 判断获取消息是否已经满
-     * @param sizePy    字节数
-     * @param maxMsgNums    最大消息数
-     * @param bufferTotal   目前已经计算字节数
-     * @param messageTotal  目前已经计算消息数
-     * @param isInDisk  是否在硬盘中
+     * @param sizePy    当前消息的字节长度
+     * @param maxMsgNums    本次拉取消息条数
+     * @param bufferTotal   已拉取消息字节总长度，不包含当前消息
+     * @param messageTotal   已拉取消息总条数
+     * @param isInDisk  当前消息是否存在于磁盘中
      * @return  是否已满
      */
     private boolean isTheBatchFull(int sizePy, int maxMsgNums, int bufferTotal, int messageTotal, boolean isInDisk) {
@@ -1478,14 +1563,17 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     private void recover(final boolean lastExitOK) {
+        // 恢复消息队列
         long maxPhyOffsetOfConsumeQueue = this.recoverConsumeQueue();
 
+        // 如果是正常退出，则按照正常修复；如果是异常退出，则走异常修复逻辑
         if (lastExitOK) {
             this.commitLog.recoverNormally(maxPhyOffsetOfConsumeQueue);
         } else {
             this.commitLog.recoverAbnormally(maxPhyOffsetOfConsumeQueue);
         }
 
+        // 修复主题队列
         this.recoverTopicQueueTable();
     }
 
@@ -1523,6 +1611,7 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     public void recoverTopicQueueTable() {
+        // 恢复Commitlog 中队列的最大偏移量
         HashMap<String/* topic-queueid */, Long/* offset */> table = new HashMap<String, Long>(1024);
         long minPhyOffset = this.commitLog.getMinOffset();
         for (ConcurrentMap<Integer, ConsumeQueue> maps : this.consumeQueueTable.values()) {
@@ -1659,6 +1748,10 @@ public class DefaultMessageStore implements MessageStore {
 
     class CommitLogDispatcherBuildIndex implements CommitLogDispatcher {
 
+        /**
+         * 其核心实现类 IndexService#buildIndex，存放Index文件的封装类为：IndexFile
+         * @param request
+         */
         @Override
         public void dispatch(DispatchRequest request) {
             // 建立 索引信息 到 IndexFile
@@ -2018,6 +2111,7 @@ public class DefaultMessageStore implements MessageStore {
                 }
 
                 // 获取从reputFromOffset开始的commitLog对应的MappeFile对应的MappedByteBuffer
+                // 跟进offset从commitlog找到一条消息，如果找不到，退出此次循环，doReput方法跳出
                 SelectMappedBufferResult result = DefaultMessageStore.this.commitLog.getData(reputFromOffset);
                 if (result != null) {
                     try {
@@ -2025,7 +2119,7 @@ public class DefaultMessageStore implements MessageStore {
 
                         // 遍历MappedByteBuffer
                         for (int readSize = 0; readSize < result.getSize() && doNext; ) {
-                            // 生成重放消息重放调度请求
+                            // 尝试构建转发请求对象DispatchRequest
                             DispatchRequest dispatchRequest =
                                 DefaultMessageStore.this.commitLog.checkMessageAndReturnSize(result.getByteBuffer(), false, false);
                             // 消息长度
@@ -2034,7 +2128,8 @@ public class DefaultMessageStore implements MessageStore {
                             // 根据请求的结果处理 读取成功
                             if (dispatchRequest.isSuccess()) {
                                 if (size > 0) {
-                                    // 读取Message
+                                    // 读取Message 根据实现类，consumequeue,index
+                                    // 分别对应 CommitLogDispatcherBuildConsumeQueue 与 CommitlogDispatcherBuildIndex
                                     DefaultMessageStore.this.doDispatch(dispatchRequest);
 
                                     // 通知有新消息

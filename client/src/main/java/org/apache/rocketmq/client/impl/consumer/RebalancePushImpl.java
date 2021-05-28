@@ -47,6 +47,12 @@ public class RebalancePushImpl extends RebalanceImpl {
         this.defaultMQPushConsumerImpl = defaultMQPushConsumerImpl;
     }
 
+    /**
+     * 调整主题小各个队列的拉取阔值
+     * @param topic
+     * @param mqAll
+     * @param mqDivided
+     */
     @Override
     public void messageQueueChanged(String topic, Set<MessageQueue> mqAll, Set<MessageQueue> mqDivided) {
         /**
@@ -68,6 +74,7 @@ public class RebalancePushImpl extends RebalanceImpl {
                 this.defaultMQPushConsumerImpl.getDefaultMQPushConsumer().setPullThresholdForQueue(newVal);
             }
 
+            // 当消费者挂断后，或主题消息队列动态变化后，消息负载会发生变化的重新分布情况
             int pullThresholdSizeForTopic = this.defaultMQPushConsumerImpl.getDefaultMQPushConsumer().getPullThresholdSizeForTopic();
             if (pullThresholdSizeForTopic != -1) {
                 int newVal = Math.max(1, pullThresholdSizeForTopic / currentQueueCount);
@@ -92,6 +99,7 @@ public class RebalancePushImpl extends RebalanceImpl {
     @Override
     public boolean removeUnnecessaryMessageQueue(MessageQueue mq, ProcessQueue pq) {
         // 同步队列的消费进度，并移除之。
+        // 非顺序消息，逻辑就比较简单了，丢弃之前，先将MessageQueue持久化，然后丢弃，重新被其他消费者加载
         this.defaultMQPushConsumerImpl.getOffsetStore().persist(mq);
         this.defaultMQPushConsumerImpl.getOffsetStore().removeOffset(mq);
         // 集群模式下，顺序消费移除时，解锁对队列的锁定

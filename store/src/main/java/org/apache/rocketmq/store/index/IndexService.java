@@ -40,8 +40,17 @@ public class IndexService {
      */
     private static final int MAX_TRY_IDX_CREATE = 3;
     private final DefaultMessageStore defaultMessageStore;
+    /**
+     * hash槽数量，默认5百万个
+     */
     private final int hashSlotNum;
+    /**
+     * index条目个数，默认为 2千万个
+     */
     private final int indexNum;
+    /**
+     * index存储路径，默认为：/rocket_home/store/index
+     */
     private final String storePath;
     private final ArrayList<IndexFile> indexFileList = new ArrayList<IndexFile>();
     private final ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
@@ -199,12 +208,14 @@ public class IndexService {
     }
 
     public void buildIndex(DispatchRequest req) {
+        // 创建或获取当前写入的IndexFile
         IndexFile indexFile = retryGetAndCreateIndexFile();
         if (indexFile != null) {
             long endPhyOffset = indexFile.getEndPhyOffset();
             DispatchRequest msg = req;
             String topic = msg.getTopic();
             String keys = msg.getKeys();
+            //  如果indexfile中的最大偏移量大于该消息的commitlog offset，忽略本次构建
             if (msg.getCommitLogOffset() < endPhyOffset) {
                 return;
             }
@@ -219,6 +230,9 @@ public class IndexService {
                     return;
             }
 
+            // 将消息中的keys,uniq_keys写入index文件中
+            // keys:用户在发送消息时候，可以指定，多个key用英文逗号隔开
+            // uniqKey:消息唯一键，与消息ID不一样，为什么呢？因为消息ID在commitlog文件中并不是唯一的，消息消费重试时，发送的消息的消息ID与原先的一样
             if (req.getUniqKey() != null) {
                 indexFile = putKey(indexFile, msg, buildKey(topic, req.getUniqKey()));
                 if (indexFile == null) {

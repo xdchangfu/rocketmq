@@ -45,23 +45,63 @@ public class MappedFile extends ReferenceResource {
     public static final int OS_PAGE_SIZE = 1024 * 4;
     protected static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.STORE_LOGGER_NAME);
 
+    /**
+     * 类变量，所有MappedFile实例已使用字节总数
+     */
     private static final AtomicLong TOTAL_MAPPED_VIRTUAL_MEMORY = new AtomicLong(0);
-
+    /**
+     * MappedFile个数
+     */
     private static final AtomicInteger TOTAL_MAPPED_FILES = new AtomicInteger(0);
+    /**
+     * 当前MappedFile对象当前写指针
+     */
     protected final AtomicInteger wrotePosition = new AtomicInteger(0);
+    /**
+     * 当前提交的指针，个人觉得是预先申请这个位置，数据可能还没有真正写入到Buffer中，该值可以大于wrotePosition (待验证)
+     */
     protected final AtomicInteger committedPosition = new AtomicInteger(0);
+    /**
+     * 当前刷写到磁盘的指针
+     */
     private final AtomicInteger flushedPosition = new AtomicInteger(0);
+    /**
+     * 文件总大小
+     */
     protected int fileSize;
+    /**
+     * 文件通道
+     */
     protected FileChannel fileChannel;
     /**
+     * 写buffer,message先写入该buffer,如果writeBuffer不为空则写入到FileChannel,为何？待解？
      * Message will put to here first, and then reput to FileChannel if writeBuffer is not null.
      */
     protected ByteBuffer writeBuffer = null;
+    /**
+     * ByteBuffer的缓冲池，一个CommitLog file对应一个
+     *            DirectByteBuffer
+     */
     protected TransientStorePool transientStorePool = null;
+    /**
+     * 文件名称
+     */
     private String fileName;
+    /**
+     * 文件序号,代表该文件代表的文件偏移量
+     */
     private long fileFromOffset;
+    /**
+     * 文件对象
+     */
     private File file;
+    /**
+     * 内存文件映射
+     */
     private MappedByteBuffer mappedByteBuffer;
+    /**
+     * 最后一次存储时间戳
+     */
     private volatile long storeTimestamp = 0;
     private boolean firstCreateInQueue = false;
 
@@ -200,12 +240,14 @@ public class MappedFile extends ReferenceResource {
         assert messageExt != null;
         assert cb != null;
 
+        // 获取当前写入位置
         int currentPos = this.wrotePosition.get();
 
         if (currentPos < this.fileSize) {
             ByteBuffer byteBuffer = writeBuffer != null ? writeBuffer.slice() : this.mappedByteBuffer.slice();
             byteBuffer.position(currentPos);
             AppendMessageResult result;
+            // 根据消息类型，是批量消息还是单个消息，进入相应的处理
             if (messageExt instanceof MessageExtBrokerInner) {
                 result = cb.doAppend(this.getFileFromOffset(), byteBuffer, this.fileSize - currentPos, (MessageExtBrokerInner) messageExt);
             } else if (messageExt instanceof MessageExtBatch) {
@@ -213,6 +255,7 @@ public class MappedFile extends ReferenceResource {
             } else {
                 return new AppendMessageResult(AppendMessageStatus.UNKNOWN_ERROR);
             }
+            // 消息写入实现
             this.wrotePosition.addAndGet(result.getWroteBytes());
             this.storeTimestamp = result.getStoreTimestamp();
             return result;
@@ -304,6 +347,7 @@ public class MappedFile extends ReferenceResource {
             //no need to commit data to file channel, so just regard wrotePosition as committedPosition.
             return this.wrotePosition.get();
         }
+        // 看是否可以提交（符合最小需要提交的页）
         if (this.isAbleToCommit(commitLeastPages)) {
             if (this.hold()) {
                 commit0(commitLeastPages);
@@ -333,14 +377,15 @@ public class MappedFile extends ReferenceResource {
 
         if (writePos - lastCommittedPosition > commitLeastPages) {
             try {
-                // 设置需要写入的byteBuffer
+                // 这里使用slice方法，主要是用的同一片内存空间，但单独的指针
                 ByteBuffer byteBuffer = writeBuffer.slice();
                 byteBuffer.position(lastCommittedPosition);
                 byteBuffer.limit(writePos);
                 // 写入fileChannel
                 this.fileChannel.position(lastCommittedPosition);
+                // 将bytebuf当前 上一次commitedPosition + 当前写位置这些数据全部写入到FileChannel中，commit的左右原来是这要的，是将writeBuffer中的数据写入到FileChannel中
                 this.fileChannel.write(byteBuffer);
-                // 设置position
+                // 更新 committedPosition 的位置
                 this.committedPosition.set(writePos);
             } catch (Throwable e) {
                 log.error("Error occurred when commit data to FileChannel.", e);
@@ -372,13 +417,17 @@ public class MappedFile extends ReferenceResource {
     }
 
     protected boolean isAbleToCommit(final int commitLeastPages) {
+        // 上次刷新偏移量
         int flush = this.committedPosition.get();
+        // 当前写入偏移量
         int write = this.wrotePosition.get();
 
+        // 如果文件已满，返回true
         if (this.isFull()) {
             return true;
         }
 
+        // 如果commitLeastPages大于0，则需要判断当前写入的偏移与上次刷新偏移量之间的间隔，如果超过commitLeastPages页数，则提交，否则本次不提交
         if (commitLeastPages > 0) {
             return ((write / OS_PAGE_SIZE) - (flush / OS_PAGE_SIZE)) >= commitLeastPages;
         }
