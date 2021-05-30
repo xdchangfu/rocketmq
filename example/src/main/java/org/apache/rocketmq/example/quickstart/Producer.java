@@ -36,7 +36,6 @@ public class Producer {
          * Instantiate with a producer group name.
          */
         DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
-
         /*
          * Specify name server addresses.
          * <p/>
@@ -52,6 +51,7 @@ public class Producer {
         /*
          * Launch the instance.
          */
+
         producer.setNamesrvAddr("127.0.0.1:9876");
         producer.start();
 
@@ -69,17 +69,16 @@ public class Producer {
                 /*
                  * Call send message to deliver message to one of brokers.
                  */
-//                SendResult sendResult = producer.send(msg);
+                SendResult sendResult = producer.send(msg);
 
-
-                Message m = new Message();
-                m.setDelayTimeLevel(2);
-                SendResult sendResult = producer.send(msg, new MessageQueueSelector() {
-                    @Override
-                    public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
-                        return null;
-                    }
-                }, "orderId");
+//                Message m = new Message();
+//                m.setDelayTimeLevel(2);
+//                SendResult sendResult = producer.send(msg, new MessageQueueSelector() {
+//                    @Override
+//                    public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
+//                        return null;
+//                    }
+//                }, "orderId");
 
                 System.out.printf("%s%n", sendResult);
             } catch (Exception e) {

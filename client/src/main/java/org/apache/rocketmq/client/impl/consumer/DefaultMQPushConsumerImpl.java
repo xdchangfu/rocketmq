@@ -277,7 +277,9 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                 return;
             }
         } else {
-            // TODO 顺序消费
+            // 根据PullRequest拉取消息。如果处理队列未被锁定，则延迟拉取消息，
+            // 也就说消息消费需要在ProceeQueue队列被自己锁定的情况下才会拉取消息，
+            // 否则将PullRequest延迟3s再拉取。并且PullRequest的初始拉取点在拉取时只在第一次拉取时设置
             if (processQueue.isLocked()) {
                 if (!pullRequest.isLockedFirst()) {
                     final long offset = this.rebalanceImpl.computePullFromWhere(pullRequest.getMessageQueue());
@@ -943,14 +945,24 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         }
     }
 
+    /**
+     *
+     * @param topic
+     * @param fullClassName 过滤类全类路径名
+     * @param filterClassSource 过滤类内容
+     * @throws MQClientException
+     */
     public void subscribe(String topic, String fullClassName, String filterClassSource) throws MQClientException {
         try {
             SubscriptionData subscriptionData = FilterAPI.buildSubscriptionData(this.defaultMQPushConsumer.getConsumerGroup(),
                 topic, "*");
             subscriptionData.setSubString(fullClassName);
+            // 设置 classFilterMode 为true,表示类过滤机制
             subscriptionData.setClassFilterMode(true);
             subscriptionData.setFilterClassSource(filterClassSource);
+            // 将该主题的订阅信息放入到RebalanceImpl对象中，一个消费者各自维护一个RebalanceImpl对象，用于创建消息拉取任务
             this.rebalanceImpl.getSubscriptionInner().put(topic, subscriptionData);
+            // 如果不为空，发送心跳到所有Broker
             if (this.mQClientFactory != null) {
                 this.mQClientFactory.sendHeartbeatToAllBrokerWithLock();
             }

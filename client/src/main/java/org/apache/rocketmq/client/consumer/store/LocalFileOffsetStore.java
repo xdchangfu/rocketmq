@@ -41,7 +41,7 @@ import org.apache.rocketmq.remoting.exception.RemotingException;
 public class LocalFileOffsetStore implements OffsetStore {
 
     /**
-     * offset存储根目录，默认为用户主目录，例如 /home/dingw,可以在消费者启动的JVM参数中，通过-Drocketmq.client.localOffsetStoreDir=路径
+     * offset 存储根目录，默认为用户主目录，例如 /home/dingw,可以在消费者启动的JVM参数中，通过-Drocketmq.client.localOffsetStoreDir=路径
      */
     public final static String LOCAL_OFFSET_STORE_DIR = System.getProperty(
         "rocketmq.client.localOffsetStoreDir",
@@ -49,7 +49,7 @@ public class LocalFileOffsetStore implements OffsetStore {
     private final static InternalLogger log = ClientLogger.getLog();
     private final MQClientInstance mQClientFactory;
     /**
-     * 费组名称
+     * 消费组名称
      */
     private final String groupName;
     /**
@@ -57,7 +57,7 @@ public class LocalFileOffsetStore implements OffsetStore {
      */
     private final String storePath;
     /**
-     * 内存中的offfset进度保持，以MessageQueue为键，偏移量为值
+     * 内存中的 offfset 进度保持，以 MessageQueue 为键，偏移量为值
      */
     private ConcurrentMap<MessageQueue, AtomicLong> offsetTable =
         new ConcurrentHashMap<MessageQueue, AtomicLong>();
@@ -72,7 +72,7 @@ public class LocalFileOffsetStore implements OffsetStore {
     }
 
     /**
-     * 主要就是读取offsets.json或offsets.json.bak中的内容，然后将json转换成map
+     * 主要就是读取 offsets.json 或 offsets.json.bak 中的内容，然后将json转换成map
      * @throws MQClientException
      */
     @Override

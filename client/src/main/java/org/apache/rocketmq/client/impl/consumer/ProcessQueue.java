@@ -305,17 +305,23 @@ public class ProcessQueue {
      */
     public long commit() {
         try {
+            // 首先申请lockTreeMap写锁
             this.lockTreeMap.writeLock().lockInterruptibly();
+
             try {
-                // 消费进度
+                // 获取 consumingMsgOrderlyTreeMap 中最大的消息偏移量 offset
+                // consumingMsgOrderlyTreeMap中存放的是本批消费的消息
                 Long offset = this.consumingMsgOrderlyTreeMap.lastKey();
+
+                // 然后更新 msgCount、msgSize，并清除 consumingMsgOrderlyTreeMap
                 msgCount.addAndGet(0 - this.consumingMsgOrderlyTreeMap.size());
                 for (MessageExt msg : this.consumingMsgOrderlyTreeMap.values()) {
                     msgSize.addAndGet(0 - msg.getBody().length);
                 }
                 this.consumingMsgOrderlyTreeMap.clear();
 
-                // 返回消费进度
+                // 并返回offset+1消息消费进度，从中可以看出offset表示消息消费队列的逻辑偏移量，类似于数组下标，
+                // 然后调用消息进度存储器存储消息消费进度，完成该批消息的消费
                 if (offset != null) {
                     return offset + 1;
                 }

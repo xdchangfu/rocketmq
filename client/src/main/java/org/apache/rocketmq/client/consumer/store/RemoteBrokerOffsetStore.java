@@ -47,7 +47,7 @@ public class RemoteBrokerOffsetStore implements OffsetStore {
      */
     private final MQClientInstance mQClientFactory;
     /**
-     * // MQ消费组
+     * MQ消费组名称
      */
     private final String groupName;
     /**

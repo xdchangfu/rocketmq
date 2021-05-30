@@ -24,8 +24,7 @@ import org.apache.rocketmq.common.message.MessageQueue;
 import org.apache.rocketmq.remoting.exception.RemotingException;
 
 /**
- * 消息消费进度保存
- *
+ * 消息消费进度
  * RemoteBrokerOffsetStore ：Consumer 集群模式 下，使用远程 Broker 消费进度。
  * LocalFileOffsetStore ：Consumer 广播模式下，使用本地 文件 消费进度。
  * 广播模式：广播模式由于每个消费者都需要消费消息，故消息的进度（最后消费的偏移量可以保存在本地）

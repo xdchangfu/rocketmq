@@ -59,7 +59,7 @@ public class ExpressionMessageFilter implements MessageFilter {
 
     @Override
     public boolean isMatchedByConsumeQueue(Long tagsCode, ConsumeQueueExt.CqExtUnit cqExtUnit) {
-        // 此模式不是 Expression模式，直接返回true,表示匹配信息，这里的Expression模式，也就是非ClassFilterMode,包含TAG,SQL92 表达式
+        // 此模式不是 Expression 模式，直接返回 true,表示匹配信息，这里的 Expression 模式，也就是非 ClassFilterMode,包含 TAG,SQL92 表达式
         if (null == subscriptionData) {
             return true;
         }
@@ -119,12 +119,11 @@ public class ExpressionMessageFilter implements MessageFilter {
     @Override
     public boolean isMatchedByCommitLog(ByteBuffer msgBuffer, Map<String, String> properties) {
 
-        // 表示过滤模式为classfilter
         if (subscriptionData == null) {
             return true;
         }
 
-        // 表示过滤模式为classFilter,直接返回true
+        // 表示过滤模式为 classFilter,直接返回true
         if (subscriptionData.isClassFilterMode()) {
             return true;
         }
@@ -143,6 +142,7 @@ public class ExpressionMessageFilter implements MessageFilter {
             return true;
         }
 
+        // 从消息体中解码出属性
         if (tempProperties == null && msgBuffer != null) {
             tempProperties = MessageDecoder.decodeProperties(msgBuffer);
         }
@@ -151,6 +151,7 @@ public class ExpressionMessageFilter implements MessageFilter {
         try {
             MessageEvaluationContext context = new MessageEvaluationContext(tempProperties);
 
+            // 对表达式进行匹配，上下文环境为消息体中的属性，如果匹配，则返回true,否则返回false
             ret = realFilterData.getCompiledExpression().evaluate(context);
         } catch (Throwable e) {
             log.error("Message Filter error, " + realFilterData + ", " + tempProperties, e);

@@ -40,6 +40,13 @@ public abstract class ReferenceResource {
         return this.available;
     }
 
+    /**
+     * 如果available为true，表示第一次执行shutdown方法，首先设置available为false，并记录firstShutdownTimestamp时间戳，
+     * 如果当前该文件被其他线程引用，则本次不强制删除，
+     * 如果没有其他线程在使用该文件，则清除MappedFile相关资源，并最终执行File#delete()方法清除文件。
+     * 在拒绝被删除保护期内（destroyMapedFileIntervalForcibly）每执行一次清理任务，将引用次数减去1000，引用数小于1后，该文件最终将被删除
+     * @param intervalForcibly
+     */
     public void shutdown(final long intervalForcibly) {
         if (this.available) {
             this.available = false;

@@ -505,6 +505,11 @@ public class MappedFile extends ReferenceResource {
         return true;
     }
 
+    /**
+     * 根据文件的最后一次更新时间与当前时间做比较，判断是否过期，如果已过期，调用 MappedFile 的 destory
+     * @param intervalForcibly
+     * @return
+     */
     public boolean destroy(final long intervalForcibly) {
         this.shutdown(intervalForcibly);
 

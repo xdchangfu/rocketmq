@@ -176,8 +176,11 @@ public abstract class RebalanceImpl {
     }
 
     public void lockAll() {
+        // 根据当前负载的消息队列，按照Broker分类存储在Map。负载的消息队列在RebalanceService时根据当前消费者数量与消息消费队列按照负载算法进行分配，
+        // 然后尝试对该消息队列加锁，如果申请锁成功，则加入到待拉取任务中
         HashMap<String, Set<MessageQueue>> brokerMqs = this.buildProcessQueueTableByBrokerName();
 
+        // 根据Broker获取主节点的地址
         Iterator<Entry<String, Set<MessageQueue>>> it = brokerMqs.entrySet().iterator();
         while (it.hasNext()) {
             Entry<String, Set<MessageQueue>> entry = it.next();
@@ -187,6 +190,7 @@ public abstract class RebalanceImpl {
             if (mqs.isEmpty())
                 continue;
 
+            // 向Broker发送锁定消息队列请求，该方法会返回本次成功锁定的消息消费队列
             FindBrokerResult findBrokerResult = this.mQClientFactory.findBrokerAddressInSubscribe(brokerName, MixAll.MASTER_ID, true);
             if (findBrokerResult != null) {
                 LockBatchRequestBody requestBody = new LockBatchRequestBody();
@@ -198,6 +202,7 @@ public abstract class RebalanceImpl {
                     Set<MessageQueue> lockOKMQSet =
                         this.mQClientFactory.getMQClientAPIImpl().lockBatchMQ(findBrokerResult.getBrokerAddr(), requestBody, 1000);
 
+                    // 遍历本次成功锁定的队列来更新对应的ProcessQueue的locked状态，如果locked为false,则设置成true,并更新锁定时间
                     for (MessageQueue mq : lockOKMQSet) {
                         ProcessQueue processQueue = this.processQueueTable.get(mq);
                         if (processQueue != null) {
@@ -209,6 +214,7 @@ public abstract class RebalanceImpl {
                             processQueue.setLastLockTimestamp(System.currentTimeMillis());
                         }
                     }
+                    // 遍历mqs，如果消息队列未成功锁定，需要将ProceeQueue的locked状态为false，在该处理队列未被其他消费者锁定之前，该消息队列将暂停拉取消息
                     for (MessageQueue mq : mqs) {
                         if (!lockOKMQSet.contains(mq)) {
                             ProcessQueue processQueue = this.processQueueTable.get(mq);
@@ -403,7 +409,10 @@ public abstract class RebalanceImpl {
         List<PullRequest> pullRequestList = new ArrayList<PullRequest>();
         for (MessageQueue mq : mqSet) {
             if (!this.processQueueTable.containsKey(mq)) {
-                // 顺序消息锁定消息队列
+                // 顺序消息时，添加该消息队列的拉取任务之前，首先要先尝试锁定消费者(消费组+CID)，不同消费组的消费者可以同时锁定同一个消息消费队列，
+                // 集群模式下同一个消费组内只能被一个消费者锁定，
+                // 如果锁定成功，则添加到拉取任务中，
+                // 如果锁定未成功，说明虽然发送了消息队列重新负载，但该消息队列还未被释放，本次负载周期不会进行消息拉取
                 if (isOrder && !this.lock(mq)) {
                     log.warn("doRebalance, {}, add a new mq failed, {}, because lock failed", consumerGroup, mq);
                     continue;

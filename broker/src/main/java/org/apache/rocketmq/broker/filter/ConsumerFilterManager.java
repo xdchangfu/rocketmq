@@ -71,12 +71,18 @@ public class ConsumerFilterManager extends ConfigManager {
 
     /**
      * Build consumer filter data.Be care, bloom filter data is not included.
-     *
-     * @return maybe null
+     * @param topic
+     * @param consumerGroup
+     * @param expression    表达式
+     * @param type  消息过滤类型,TAG或SQL92
+     * @param clientVersion 客户端版本号
+     * @return
      */
     public static ConsumerFilterData build(final String topic, final String consumerGroup,
         final String expression, final String type,
         final long clientVersion) {
+
+        // 如果是TAG模式，则返回null,表明 ConsumerFilterData 不针对TAG模式
         if (ExpressionType.isTagType(type)) {
             return null;
         }
@@ -90,6 +96,7 @@ public class ConsumerFilterManager extends ConfigManager {
         consumerFilterData.setExpressionType(type);
         consumerFilterData.setClientVersion(clientVersion);
         try {
+            // 解析编译表达式
             consumerFilterData.setCompiledExpression(
                 FilterFactory.INSTANCE.get(type).compile(expression)
             );
