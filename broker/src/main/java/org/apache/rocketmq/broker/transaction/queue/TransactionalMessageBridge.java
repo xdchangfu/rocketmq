@@ -200,6 +200,14 @@ public class TransactionalMessageBridge {
         return store.asyncPutMessage(parseHalfMessageInner(messageInner));
     }
 
+    /**
+     * 备份消息的原主题名称与原队列ID，然后取消是事务消息的消息标签，重新设置消息的主题为：RMQ_SYS_TRANS_HALF_TOPIC，
+     * 队列ID固定为0。然后调用MessageStore#putMessage方法将消息持久化，
+     * 这里TransactionalMessageBridge桥接类，就是封装事务消息的相关流程，
+     * 最终调用MessageStore完成消息的持久化
+     * @param msgInner
+     * @return
+     */
     private MessageExtBrokerInner parseHalfMessageInner(MessageExtBrokerInner msgInner) {
         MessageAccessor.putProperty(msgInner, MessageConst.PROPERTY_REAL_TOPIC, msgInner.getTopic());
         MessageAccessor.putProperty(msgInner, MessageConst.PROPERTY_REAL_QUEUE_ID,

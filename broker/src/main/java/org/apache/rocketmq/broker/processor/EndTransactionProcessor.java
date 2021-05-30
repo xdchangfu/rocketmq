@@ -40,6 +40,7 @@ import org.apache.rocketmq.store.PutMessageResult;
 import org.apache.rocketmq.store.config.BrokerRole;
 
 /**
+ * 事务最终处理器，提交回滚
  * EndTransaction processor: process commit and rollback message
  */
 public class EndTransactionProcessor extends AsyncNettyRequestProcessor implements NettyRequestProcessor {
@@ -123,20 +124,32 @@ public class EndTransactionProcessor extends AsyncNettyRequestProcessor implemen
                     return null;
             }
         }
+
+
         OperationResult result = new OperationResult();
+        // 如果请求为提交事务，进入事务消息提交处理流程
         if (MessageSysFlag.TRANSACTION_COMMIT_TYPE == requestHeader.getCommitOrRollback()) {
+            // 提交消息，该方法主要是根据commitLogOffset从commitlog文件中查找消息返回OperationResult实例
             result = this.brokerController.getTransactionalMessageService().commitMessage(requestHeader);
+            // 如果成功查找到消息，则继续处理，否则返回给客户端，消息未找到错误信息
             if (result.getResponseCode() == ResponseCode.SUCCESS) {
+                // 验证消息必要字段
                 RemotingCommand res = checkPrepareMessage(result.getPrepareMessage(), requestHeader);
                 if (res.getCode() == ResponseCode.SUCCESS) {
+
+                    // 调用endMessageTransaction方法，该方法主要的目的就是恢复事务消息的真实的主题、队列，并设置事务ID
                     MessageExtBrokerInner msgInner = endMessageTransaction(result.getPrepareMessage());
                     msgInner.setSysFlag(MessageSysFlag.resetTransactionValue(msgInner.getSysFlag(), requestHeader.getCommitOrRollback()));
                     msgInner.setQueueOffset(requestHeader.getTranStateTableOffset());
                     msgInner.setPreparedTransactionOffset(requestHeader.getCommitLogOffset());
                     msgInner.setStoreTimestamp(result.getPrepareMessage().getStoreTimestamp());
                     MessageAccessor.clearProperty(msgInner, MessageConst.PROPERTY_TRANSACTION_PREPARED);
+
+                    // 发送最终消息，其实现原理非常简单，调用MessageStore将消息存储在commitlog文件中，此时的消息，会被转发到原消息主题对应的消费队列，被消费者消费
                     RemotingCommand sendResult = sendFinalMessage(msgInner);
+
                     if (sendResult.getCode() == ResponseCode.SUCCESS) {
+                        // 删除预处理消息(prepare)，其实是将消息存储在主题为：RMQ_SYS_TRANS_OP_HALF_TOPIC的主题中，代表这些消息已经被处理（提交或回滚）
                         this.brokerController.getTransactionalMessageService().deletePrepareMessage(result.getPrepareMessage());
                     }
                     return sendResult;
@@ -144,10 +157,13 @@ public class EndTransactionProcessor extends AsyncNettyRequestProcessor implemen
                 return res;
             }
         } else if (MessageSysFlag.TRANSACTION_ROLLBACK_TYPE == requestHeader.getCommitOrRollback()) {
+            // 回滚消息，其实内部就是根据commitlogOffset查找消息
             result = this.brokerController.getTransactionalMessageService().rollbackMessage(requestHeader);
             if (result.getResponseCode() == ResponseCode.SUCCESS) {
                 RemotingCommand res = checkPrepareMessage(result.getPrepareMessage(), requestHeader);
                 if (res.getCode() == ResponseCode.SUCCESS) {
+                    // 将消息存储在RMQ_SYS_TRANS_OP_HALF_TOPIC中，代表该消息已被处理，与提交事务消息不同的是，
+                    // 提交事务消息会将消息恢复原主题与队列，再次存储在commitlog文件中
                     this.brokerController.getTransactionalMessageService().deletePrepareMessage(result.getPrepareMessage());
                 }
                 return res;
@@ -163,6 +179,14 @@ public class EndTransactionProcessor extends AsyncNettyRequestProcessor implemen
         return false;
     }
 
+    /**
+     *  验证消息的生产组与请求信息中的生产者组是否一致。
+     *  验证消息的队列偏移量（queueOffset）与请求信息中的偏移量是否一致。
+     *  验证消息的commitLogOffset与请求信息中的CommitLogOffset是否一致
+     * @param msgExt
+     * @param requestHeader
+     * @return
+     */
     private RemotingCommand checkPrepareMessage(MessageExt msgExt, EndTransactionRequestHeader requestHeader) {
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
         if (msgExt != null) {

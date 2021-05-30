@@ -29,6 +29,14 @@ public class TransactionListenerImpl implements TransactionListener {
 
     private ConcurrentHashMap<String, Integer> localTrans = new ConcurrentHashMap<>();
 
+    /**
+     * 该方法，主要是设置本地事务状态，该方法与业务方代码在一个事务中，例如OrderServer#createMap中，只要本地事务提交成功，该方法也会提交成功。
+     * 故在这里，主要是t_message_transaction添加一条记录，在事务会查时，如果存在记录，就认为是该消息需要提交
+     * 也可以使用其他存储框架，如：redis
+     * @param msg Half(prepare) message
+     * @param arg Custom business parameter
+     * @return
+     */
     @Override
     public LocalTransactionState executeLocalTransaction(Message msg, Object arg) {
         int value = transactionIndex.getAndIncrement();
@@ -37,6 +45,13 @@ public class TransactionListenerImpl implements TransactionListener {
         return LocalTransactionState.UNKNOW;
     }
 
+    /**
+     * 该方法主要是告知RocketMQ消息是否需要提交还是回滚，如果本地事务表（t_message_transaction）存在记录，则认为提交，
+     * 如果不存在，可以设置会查次数，如果指定次数内还是未查到消息，则回滚，否则返回未知，rocketmq会按一定的频率回查事务，
+     * 当然回查次数也有限制，默认为5次，可配置
+     * @param msg Check message
+     * @return
+     */
     @Override
     public LocalTransactionState checkLocalTransaction(MessageExt msg) {
         Integer status = localTrans.get(msg.getTransactionId());

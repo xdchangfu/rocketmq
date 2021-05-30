@@ -339,6 +339,9 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                             localTransactionState = transactionCheckListener.checkLocalTransactionState(message);
                         } else if (transactionListener != null) {
                             log.debug("Used new check API in transaction message");
+
+                            // 检测本地事务状态，告知RocketMQ该事务的事务状态，然后返回COMMIT_MESSAGE、ROLLBACK_MESSAGE、UNKNOW中的一个
+                            // 然后向Broker发送END_TRANSACTION命令即可
                             localTransactionState = transactionListener.checkLocalTransaction(message);
                         } else {
                             log.warn("CheckTransactionState, pick transactionListener by group[{}] failed", group);
@@ -348,7 +351,7 @@ public class DefaultMQProducerImpl implements MQProducerInner {
                         exception = e;
                     }
 
-                    // 处理事务结果，提交消息 COMMIT / ROLLBACK
+                    // 发送END_TRANSACTION到Broker，其具体实现
                     this.processTransactionState(
                         localTransactionState,
                         group,
@@ -568,13 +571,16 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
         // 校验 Producer 处于运行状态
         this.makeSureStateOK();
+
         // 校验消息格式
         Validators.checkMessage(msg, this.defaultMQProducer);
+
         // 调用编号；用于下面打印日志，标记为同一次发送消息
         final long invokeID = random.nextLong();
         long beginTimestampFirst = System.currentTimeMillis();
         long beginTimestampPrev = beginTimestampFirst;
         long endTimestamp = beginTimestampFirst;
+
         // 获取 Topic路由信息
         TopicPublishInfo topicPublishInfo = this.tryToFindTopicPublishInfo(msg.getTopic());
         if (topicPublishInfo != null && topicPublishInfo.ok()) {
@@ -1276,6 +1282,8 @@ public class DefaultMQProducerImpl implements MQProducerInner {
 
         // 发送【Half消息】
         SendResult sendResult = null;
+        // TRAN_MSG，其值为true，表示为事务消息；
+        // PGROUP：消息所属发送者组，然后以同步方式发送消息;
         MessageAccessor.putProperty(msg, MessageConst.PROPERTY_TRANSACTION_PREPARED, "true");
         MessageAccessor.putProperty(msg, MessageConst.PROPERTY_PRODUCER_GROUP, this.defaultMQProducer.getProducerGroup());
         try {

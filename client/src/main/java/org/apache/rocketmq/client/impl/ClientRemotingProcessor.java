@@ -116,6 +116,7 @@ public class ClientRemotingProcessor extends AsyncNettyRequestProcessor implemen
                 MQProducerInner producer = this.mqClientFactory.selectProducer(group);
                 if (producer != null) {
                     final String addr = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
+                    // TODO 最终调用生产者的checkTransactionState方法
                     producer.checkTransactionState(addr, messageExt, requestHeader);
                 } else {
                     log.debug("checkTransactionState, pick producer by group[{}] failed", group);

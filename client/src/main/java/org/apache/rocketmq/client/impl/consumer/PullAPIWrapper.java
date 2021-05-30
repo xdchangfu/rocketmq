@@ -203,6 +203,9 @@ public class PullAPIWrapper {
     ) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
 
         // 根据MQ的Broker信息获取查找Broker信息，封装成FindBrokerResult
+        // 根据brokerId从broker主从缓存表中获取指定broker名称，如果根据brokerId未找到相关条目，
+        // 此时如果onlyThisBroker为false,则随机返回broker中任意一个Broker，否则返回null
+        // 组装FindBrokerResult时，需要设置是否是slave这个属性。如果brokerId=0表示返回的broker是主节点，否则返回的是从节点
         FindBrokerResult findBrokerResult =
             this.mQClientFactory.findBrokerAddressInSubscribe(mq.getBrokerName(),
                 this.recalculatePullFromWhichNode(mq), false);

@@ -669,6 +669,7 @@ public class DefaultMessageStore implements MessageStore {
             // 根据需要拉取消息的偏移量 与 队列最小，最大偏移量进行对比
             if (maxOffset == 0) {   // 表示队列中没有消息
                 status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
+
                 // 计算下一次拉取拉取的开始偏移量
                 // 如果是主节点，或者是从节点但开启了offsetCheckSlave的话，下次从头开始拉取
                 // 如果是从节点，并不开启offsetCheckSlave,则使用原先的offset,因为考虑到主从同步延迟的因素，导致从节点consumequeue并没有同步到数据。
@@ -796,8 +797,15 @@ public class DefaultMessageStore implements MessageStore {
                         // 计算下次拉取消息的消息队列编号
                         nextBeginOffset = offset + (i / ConsumeQueue.CQ_STORE_UNIT_SIZE);
 
+                        // TODO 如果diff大于memory,表示当前需要拉取的消息已经超出了常驻内存的大小，表示主服务器繁忙，此时才建议从从服务器拉取
                         // 主要是判断，如果当前commitlog中的偏移量 - 当前最大拉取消息偏移量 》允许消息在内存中存在大小时，建议下一次拉取任务，从从节点拉取。
+                        // maxOffsetPy：代表当前主服务器消息存储文件最大偏移量，maxPhyOffsetPulling：此次拉取消息最大偏移量
+                        // diff：对于PullMessageService线程来说，当前未被拉取到消息消费端的消息长度
                         long diff = maxOffsetPy - maxPhyOffsetPulling;
+
+                        // TOTAL_PHYSICAL_MEMORY_SIZE：RocketMQ所在服务器总内存大小；
+                        // accessMessageInMemoryMaxRatio：表示RocketMQ所能使用的最大内存比例，超过该内存，消息将被置换出内存；
+                        // memory表示RocketMQ消息常驻内存的大小，超过该大小，RocketMQ会将旧的消息置换会磁盘
                         long memory = (long) (StoreUtil.TOTAL_PHYSICAL_MEMORY_SIZE
                             * (this.messageStoreConfig.getAccessMessageInMemoryMaxRatio() / 100.0));
                         getResult.setSuggestPullingFromSlave(diff > memory);

@@ -1063,7 +1063,7 @@ public class MQClientInstance {
      * 获得Broker信息
      * @param brokerName
      * @param brokerId
-     * @param onlyThisBroker    是否必须是该broker
+     * @param onlyThisBroker    是否必须返回brokerId的broker对应的服务器信息
      * @return  Broker信息
      */
     public FindBrokerResult findBrokerAddressInSubscribe(
